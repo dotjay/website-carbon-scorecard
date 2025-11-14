@@ -239,7 +239,7 @@ async function greenHosting(siteUrl, verbose = false) {
 	return verbose ? response.green : response;
 }
 
-async function measurePageCO2(browser, url, green = false) {
+async function measurePage(browser, url, green = false) {
 	const page = await browser.newPage();
 	let totalBytes = 0;
 
@@ -310,8 +310,10 @@ async function main() {
 	const results = [];
 
 	for (const url of urls.slice(0, MAX_PAGES)) {
-		const result = await measurePageCO2(browser, url, green);
-		if (result) results.push(result);
+		const result = await measurePage(browser, url, green);
+		if (result) {
+			results.push(result);
+		}
 	}
 
 	await browser.close();
