@@ -317,10 +317,8 @@ async function main() {
 	await browser.close();
 
 	// 4. Compute averages
-	const avgBytes =
-		results.reduce((sum, r) => sum + r.bytes, 0) / results.length;
-	const avgCO2e =
-		results.reduce((sum, r) => sum + r.co2, 0) / results.length;
+	const avgBytes = results.reduce((sum, r) => sum + r.bytes, 0) / results.length;
+	const avgCO2e = results.reduce((sum, r) => sum + r.co2, 0) / results.length;
 
 	console.log("\n=== 🌱 Website Carbon Summary ===");
 	console.log(`Pages assessed: ${results.length}`);
