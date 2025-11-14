@@ -1,0 +1,33 @@
+{
+  "name": "digital-carbon-scorecard",
+  "version": "1.0.0",
+  "description": "A simple digital carbon scorecard generator",
+  "keywords": [
+    "digital",
+    "sustainability",
+    "carbon",
+    "audit",
+    "scorecard"
+  ],
+  "homepage": "https://bitbucket.org/asitshouldbe/digital-carbon-scorecard#readme",
+  "bugs": {
+    "url": "https://bitbucket.org/asitshouldbe/digital-carbon-scorecard/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@bitbucket.org/asitshouldbe/digital-carbon-scorecard.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Jon Gibbins",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@tgwf/co2": "^0.16.9",
+    "hpagent": "^1.2.0",
+    "puppeteer": "^24.30.0",
+    "sitemapper": "^4.0.2"
+  }
+}
