@@ -1,5 +1,18 @@
 #!/usr/bin/env node
-import { co2 } from "@tgwf/co2";
+
+/**
+ * website-carbon.js
+ * 
+ * A CLI tool to estimate the carbon emissions of a website.
+ */
+
+// TODO: 
+// - Add command-line options for configuration (model, max pages, debug, etc.)
+// - Consider region / gridIntensity options for more accurate CO2 estimates
+// - Consider adding per visit estimates
+// - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
+
+import { co2, hosting } from "@tgwf/co2";
 import puppeteer from "puppeteer";
 import Crawler from "simplecrawler";
 import Sitemapper from "sitemapper";
@@ -28,18 +41,11 @@ if (CARBON_MODEL !== 'swd' && CARBON_RATINGS === true) {
 const model = (CARBON_MODEL === '1byte') ? new co2({ model: "1byte" }) : new co2({ model: "swd", version: 4, rating: CARBON_RATINGS });
 var co2Data = {};
 
-function bytesToCO2(bytes) {
-	const data = model.perByte(bytes);
+function bytesToCO2(bytes, green = false) {
+	// If hosting is green, green hosting factor = 1 (handled in co2.js)
+	// https://sustainablewebdesign.org/estimating-digital-emissions/#faq-question-1713777503222
+	const data = model.perByte(bytes, green);
 	co2Data = data;
-
-	/*
-	const co2Estimate = model.calculate({
-		bytesTransferred: bytes,
-		region: "global", // or specify a region like 'us', 'eu', etc.
-		device: "desktop", // or 'mobile'
-		connectionType: "broadband", // or 'mobile'
-	});
-	*/
 
 	return ((CARBON_MODEL == 'swd') && CARBON_RATINGS) ? data.total : data; // in grams of CO2e
 }
@@ -169,7 +175,29 @@ async function crawlSiteForUrls(siteUrl) {
 	});
 }
 
-async function measurePageCO2(browser, url) {
+// https://developers.thegreenwebfoundation.org/co2js/tutorials/check-hosting/
+async function greenHosting(siteUrl, verbose = false) {
+	// Must send a host domain to the hosting.check() method
+	const hostDomain = new URL(siteUrl).hostname;
+
+	// Note: hosting.check() isn't a thing in ESM version; use hosting()
+	// FIXME: Update when @tgwf/co2 library is fixed (https://github.com/thegreenwebfoundation/co2.js/issues/266)
+	const response = await hosting(hostDomain, {
+		verbose: verbose,
+		userAgentIdentifier: 'sustainability-auditor-cli'
+	});
+
+	if (DEBUG) {
+		console.log("\n-----------------------------------");
+		console.log(`🌿 Green hosting lookup result:`);
+		console.log(response);
+		console.log("-----------------------------------\n");
+	}
+	
+	return verbose ? response.green : response;
+}
+
+async function measurePageCO2(browser, url, green = false) {
 	const page = await browser.newPage();
 	let totalBytes = 0;
 
@@ -184,7 +212,7 @@ async function measurePageCO2(browser, url) {
 
 	try {
 		await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
-		const co2 = bytesToCO2(totalBytes);
+		const co2 = bytesToCO2(totalBytes, green);
 
 		const urlPath = new URL(url).pathname;
 		if ((CARBON_MODEL == 'swd') && CARBON_RATINGS) {
@@ -209,7 +237,15 @@ async function main() {
 		process.exit(1);
 	}
 
+	let green = false;
 	let urls = [];
+
+	// Check if hosting is green
+	// Use greenHosting(siteUrl, true) for verbose output
+	green = greenHosting(siteUrl);
+	if (green) {
+		console.log("🌿 Hosting is green!");
+	}
 
 	// 1. Try to get sitemap URLs
 	if (FORCE_CRAWLER) {
@@ -232,7 +268,7 @@ async function main() {
 	const results = [];
 
 	for (const url of urls.slice(0, MAX_PAGES)) {
-		const result = await measurePageCO2(browser, url);
+		const result = await measurePageCO2(browser, url, green);
 		if (result) results.push(result);
 	}
 
