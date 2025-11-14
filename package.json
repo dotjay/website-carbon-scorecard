@@ -28,6 +28,7 @@
     "@tgwf/co2": "^0.16.9",
     "hpagent": "^1.2.0",
     "puppeteer": "^24.30.0",
+    "simplecrawler": "^1.1.9",
     "sitemapper": "^4.0.2"
   }
 }

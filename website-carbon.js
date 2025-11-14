@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { co2 } from "@tgwf/co2";
 import puppeteer from "puppeteer";
+import Crawler from "simplecrawler";
 import Sitemapper from "sitemapper";
 import { URL } from "url";
 
@@ -8,6 +9,7 @@ const DEBUG = true;
 const MAX_PAGES = 100;
 const CARBON_MODEL = 'swd'; // swd or 1byte
 const CARBON_RATINGS = true;
+const FORCE_CRAWLER = false;
 
 const SWDMv3Ratings = {
 	fifthPercentile: 0.095,
@@ -30,7 +32,8 @@ function bytesToCO2(bytes) {
 	const data = model.perByte(bytes);
 	co2Data = data;
 
-	/* const co2Estimate = model.calculate({
+	/*
+	const co2Estimate = model.calculate({
 		bytesTransferred: bytes,
 		region: "global", // or specify a region like 'us', 'eu', etc.
 		device: "desktop", // or 'mobile'
@@ -82,6 +85,7 @@ function carbonRating(co2e = null) {
 			}
 		// }
 	}
+
 	return (CARBON_MODEL == 'swd') ? co2Data.rating : null;
 }
 
@@ -115,8 +119,7 @@ async function fetchSitemapUrls(siteUrl) {
 		},
 		fields: {
 			loc: true,
-			lastmod: true,
-			// sitemap: true,
+			lastmod: true
 		},
 	});
 
@@ -132,6 +135,38 @@ async function fetchSitemapUrls(siteUrl) {
 		console.log("⚠️  Could not fetch or parse site map:", err);
 		return [];
 	}
+}
+
+// Fallback crawler
+async function crawlSiteForUrls(siteUrl) {
+	return new Promise((resolve) => {
+		const crawler = new Crawler(siteUrl);
+		const crawledUrls = [];
+
+		crawler.maxDepth = 3;
+		crawler.maxConcurrency = 3;
+		crawler.maxResources = MAX_PAGES;
+		crawler.downloadUnsupported = false;
+
+		// Exclude certain file types, such as CSS, JS, images, videos, archives
+		crawler.addFetchCondition(function(queueItem) {
+			return !queueItem.path.match(/\.(css|js|xml|zip|jpe?g|png|mp4|gif)$/i);
+		});
+
+		crawler.on("fetchcomplete", (queueItem) => {
+			crawledUrls.push(queueItem.url);
+			if (crawledUrls.length >= MAX_PAGES) {
+				crawler.stop();
+			}
+		});
+
+		crawler.on("complete", () => {
+			console.log(`🕸️  Found ${crawledUrls.length} URLs by crawling the site`);
+			resolve(crawledUrls);
+		});
+
+		crawler.start();
+	});
 }
 
 async function measurePageCO2(browser, url) {
@@ -174,17 +209,28 @@ async function main() {
 		process.exit(1);
 	}
 
+	let urls = [];
+
 	// 1. Try to get sitemap URLs
-	let urls = await fetchSitemapUrls(siteUrl);
+	if (FORCE_CRAWLER) {
+		console.log("⚠️  FORCE_CRAWLER is enabled - skipping site map check.");
+	} else {
+		urls = await fetchSitemapUrls(siteUrl);
+	}
 
-	// 2. If no sitemap, just use homepage
-	if (urls.length === 0) urls = [siteUrl];
+	// 2. If no site map found, try crawling instead
+	if (urls.length === 0) {
+		console.log("🕷️  Crawling site to discover pages...");
+		urls = await crawlSiteForUrls(siteUrl);
+	}
 
+	// 3. Loop through up to MAX_PAGES
+	console.log(`\n🌍 Assessing ${siteUrl}...\n`);
+
+	// Launch headless browser
 	const browser = await puppeteer.launch({ headless: "new" });
 	const results = [];
 
-	// 3. Loop through up to MAX_PAGES
-		console.log(`\n🌍 Assessing ${siteUrl}...\n`);
 	for (const url of urls.slice(0, MAX_PAGES)) {
 		const result = await measurePageCO2(browser, url);
 		if (result) results.push(result);
