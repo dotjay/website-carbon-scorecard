@@ -18,9 +18,9 @@ import Crawler from "simplecrawler";
 import Sitemapper from "sitemapper";
 import { URL } from "url";
 
-const DEBUG = true;
+const DEBUG = false;
 const MAX_PAGES = 100;
-const CARBON_MODEL = 'swd'; // swd or 1byte
+const CARBON_MODEL = 'swd'; // swd (latest), swd3, swd4, 1byte
 const CARBON_RATINGS = true;
 const FORCE_CRAWLER = false;
 
@@ -33,21 +33,63 @@ const SWDMv3Ratings = {
 	fiftiethPercentile: 0.846,
 };
 
-if (CARBON_MODEL !== 'swd' && CARBON_RATINGS === true) {
-	console.log("⚠️  Warning: Carbon ratings are only available with the Sustainable Web Design Model. Carbob ratings will not display.");
+if (modelSupportsCarbonRating && CARBON_RATINGS === true) {
+	console.log("⚠️  Warning: Carbon ratings are only available with the Sustainable Web Design Model. Carbon ratings will not display.");
 }
 
 // Using @tgwf/co2 library to estimate CO2 emissions
-const model = (CARBON_MODEL === '1byte') ? new co2({ model: "1byte" }) : new co2({ model: "swd", version: 4, rating: CARBON_RATINGS });
+var model;
+var modelSupportsCarbonRating = false;
+switch (CARBON_MODEL) {
+	case '1byte':
+		console.log("ℹ️  Carbon model: 1byte");
+		model = new co2({ model: "1byte" });
+		break;
+	case 'swd3':
+		console.log("ℹ️  Carbon model: Sustainable Web Design Model v3");
+		model = new co2({ model: "swd", version: 3, rating: CARBON_RATINGS });
+		modelSupportsCarbonRating = true;
+		break;
+	case 'swd':
+	case 'swd4':
+	default:
+		console.log("ℹ️  Carbon model: Sustainable Web Design Model v4 (latest)");
+		model = new co2({ model: "swd", version: 4, rating: CARBON_RATINGS });
+		modelSupportsCarbonRating = true;
+		break;
+}
+
 var co2Data = {};
 
 function bytesToCO2(bytes, green = false) {
 	// If hosting is green, green hosting factor = 1 (handled in co2.js)
 	// https://sustainablewebdesign.org/estimating-digital-emissions/#faq-question-1713777503222
-	const data = model.perByte(bytes, green);
+	var data;
+	if (CARBON_MODEL === 'swd3') {
+		// SWD v3
+		// perByte(
+		// 	bytes,
+		// 	carbonIntensity = false,
+		// 	segmentResults = false,
+		// 	ratingResults = false,
+		// 	options = {}
+		// )
+		data = model.perByte(bytes);
+	} else {
+		// SWD v4
+		// perByte(
+		// 	bytes,
+		// 	green = false,
+		// 	segmented = false,
+		// 	ratingResults = false,
+		// 	options = {}
+		// )
+		data = model.perByte(bytes, green);
+	}
+	
 	co2Data = data;
 
-	return ((CARBON_MODEL == 'swd') && CARBON_RATINGS) ? data.total : data; // in grams of CO2e
+	return (modelSupportsCarbonRating && CARBON_RATINGS) ? data.total : data; // in grams of CO2e
 }
 
 // https://sustainablewebdesign.org/digital-carbon-ratings/
@@ -92,7 +134,7 @@ function carbonRating(co2e = null) {
 		// }
 	}
 
-	return (CARBON_MODEL == 'swd') ? co2Data.rating : null;
+	return (modelSupportsCarbonRating) ? co2Data.rating : null;
 }
 
 // Source - https://stackoverflow.com/a/18650828
@@ -132,7 +174,7 @@ async function fetchSitemapUrls(siteUrl) {
 	console.log(`🔍 Checking for site map: ${sitemapUrl}`);
 
 	try {
-		const { url, sites, errors } = await sitemap.fetch();
+		const { sites } = await sitemap.fetch();
 		const urls = sites.map(site => site.loc);
 		console.log(`📄 Found ${urls.length} URLs in the site map`);
 
@@ -215,8 +257,8 @@ async function measurePageCO2(browser, url, green = false) {
 		const co2 = bytesToCO2(totalBytes, green);
 
 		const urlPath = new URL(url).pathname;
-		if ((CARBON_MODEL == 'swd') && CARBON_RATINGS) {
-			console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e – ${carbonRating(co2)} rating`);
+		if (modelSupportsCarbonRating && CARBON_RATINGS) {
+			console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e – ${carbonRating()} rating`);
 		} else {
 			console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e`);
 		}
@@ -284,7 +326,7 @@ async function main() {
 	console.log(`Pages assessed: ${results.length}`);
 	console.log(`Average size:   ${formatBytes(avgBytes)}`);
 	console.log(`Average CO₂e:   ${(avgCO2e).toFixed(2)} g per page`);
-	if ((CARBON_MODEL == 'swd') && CARBON_RATINGS) {
+	if (modelSupportsCarbonRating && CARBON_RATINGS) {
 			console.log(`Overall Rating: ${carbonRating(avgCO2e)}`);
 	}
 	console.log("=================================");
