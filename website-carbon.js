@@ -9,7 +9,7 @@
 // TODO: 
 // - Add command-line options for configuration (model, max pages, debug, etc.)
 // - Consider region / gridIntensity options for more accurate CO2 estimates
-// - Consider adding per visit estimates
+// - Consider how tranfer size calculations can be improved
 // - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
 
 import { co2, hosting } from "@tgwf/co2";
@@ -62,6 +62,14 @@ switch (CARBON_MODEL) {
 var co2Data = {};
 
 function bytesToCO2(bytes, green = false) {
+	if (bytes === 0) {
+		co2Data = {
+			total: 0,
+			rating: modelSupportsCarbonRating ? "A+" : null
+		};
+		return 0;
+	}
+
 	// If hosting is green, green hosting factor = 1 (handled in co2.js)
 	// https://sustainablewebdesign.org/estimating-digital-emissions/#faq-question-1713777503222
 	var data;
@@ -87,9 +95,12 @@ function bytesToCO2(bytes, green = false) {
 		data = model.perByte(bytes, green);
 	}
 	
-	co2Data = data;
+	co2Data = {
+		total: data.total,
+		rating: modelSupportsCarbonRating ? data.rating : null
+	};
 
-	return (modelSupportsCarbonRating && CARBON_RATINGS) ? data.total : data; // in grams of CO2e
+	return (modelSupportsCarbonRating) ? data.total : data; // in grams of CO2e
 }
 
 // https://sustainablewebdesign.org/digital-carbon-ratings/
@@ -266,8 +277,82 @@ async function measurePage(browser, url, green = false) {
 		await page.close();
 		return { url, bytes: totalBytes, co2 };
 	} catch (err) {
-		console.log(`⚠️ Failed to load ${url}: ${err.message}`);
+		console.error(`⚠️ Failed to load ${url}: ${err.message}`);
 		await page.close();
+		return null;
+	}
+}
+
+/**
+ * Measures the total transfer size (in bytes) and estimated CO2 for a single page load.
+ * @param {object} browser - Puppeteer Browser instance.
+ * @param {string} url - The URL to navigate to.
+ * @param {boolean} green - Whether the hosting is considered 'green'.
+ * @param {boolean} clearCache - If true, clears the browser cache before navigation.
+ */
+// Alternative version measuring with CDP (Chrome DevTools Protocol)
+// https://www.ashjohns.dev/blog/measuring-page-weight
+async function measurePageCDP(browser, url, green = false, clearCache = false) {
+	let client = null;
+	let page = null;
+	let totalBytes = 0;
+	let co2 = null;
+
+	try {
+		// Set up session
+		page = (await browser.pages())[0] || await browser.newPage();
+		await page.setViewport({ width: 1900, height: 1000 });
+
+		// Enable network tracking to capture transfer sizes
+		client = await page.createCDPSession();
+		await client.send('Network.enable');
+
+		// Handle cache clearing
+		if (clearCache) {
+			// CDP command to clear all browser caches (disk and memory)
+			await client.send('Network.clearBrowserCache');
+			if (DEBUG) console.log(`COLD LOAD measurement. Cache cleared for ${url}.`);
+		} else {
+			if (DEBUG) console.log(`WARM LOAD measurement.`);
+		}
+
+		// Listen for network loading finished events to accumulate transfer sizes
+		const onLoadingFinished = (data) => {
+			if (data.encodedDataLength >= 0) {
+				totalBytes += data.encodedDataLength;
+			}
+		};
+		client.on('Network.loadingFinished', onLoadingFinished);
+
+		try {
+			// Navigate to the page and wait for network activity to finish
+			await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+
+			// Estimate CO2 based on total bytes transferred
+			co2 = bytesToCO2(totalBytes, green);
+
+			const urlPath = new URL(url).pathname;
+			if (modelSupportsCarbonRating && CARBON_RATINGS) {
+				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e – ${carbonRating()} rating`);
+			} else {
+				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e`);
+			}
+		} catch (err) {
+			console.error(`Failed to load page: ${err.message}`);
+		} finally {
+			if (client) {
+				// Remove event listener and close the CDP session
+				client.off('Network.loadingFinished', onLoadingFinished);
+				await client.detach();
+			}
+			if (page) {
+				await page.close();
+			}
+		}
+
+		return { url, bytes: totalBytes, co2 };
+	} catch (err) {
+		console.error(`⚠️ Failed to load ${url}: ${err.message}`);
 		return null;
 	}
 }
@@ -289,45 +374,61 @@ async function main() {
 		console.log("🌿 Hosting is green!");
 	}
 
-	// 1. Try to get sitemap URLs
+	// Try to get sitemap URLs
 	if (FORCE_CRAWLER) {
 		console.log("⚠️  FORCE_CRAWLER is enabled - skipping site map check.");
 	} else {
 		urls = await fetchSitemapUrls(siteUrl);
 	}
 
-	// 2. If no site map found, try crawling instead
+	// If no site map found, try crawling instead
 	if (urls.length === 0) {
 		console.log("🕷️  Crawling site to discover pages...");
 		urls = await crawlSiteForUrls(siteUrl);
 	}
 
-	// 3. Loop through up to MAX_PAGES
-	console.log(`\n🌍 Assessing ${siteUrl}...\n`);
+	// Loop through up to MAX_PAGES
+	console.log(`\n🌍 Assessing ${siteUrl}...`);
 
 	// Launch headless browser
-	const browser = await puppeteer.launch({ headless: "new" });
-	const results = [];
+	const browser = await puppeteer.launch({ headless: "new", args: ['--incognito'] });
 
-	for (const url of urls.slice(0, MAX_PAGES)) {
-		const result = await measurePage(browser, url, green);
-		if (result) {
-			results.push(result);
+	// Limit to MAX_PAGES
+	urls = urls.slice(0, MAX_PAGES);
+
+	// First visits (cold loads)
+	console.log(`\n🔄 First visits...`);
+	const firstVisitResults = [];
+	for (const url of urls) {
+		const firstVisit = await measurePageCDP(browser, url, green, true);
+		if (firstVisit) {
+			firstVisitResults.push(firstVisit);
+		}
+	}
+
+	// Return visits (warm loads)
+	console.log(`\n💾 Return visits...`);
+	const returnVisitResults = [];
+	for (const url of urls) {
+		const returnVisit= await measurePageCDP(browser, url, green, false);
+		if (returnVisit) {
+			returnVisitResults.push(returnVisit);
 		}
 	}
 
 	await browser.close();
 
-	// 4. Compute averages
-	const avgBytes = results.reduce((sum, r) => sum + r.bytes, 0) / results.length;
-	const avgCO2e = results.reduce((sum, r) => sum + r.co2, 0) / results.length;
+	// Compute averages of first visits (cold loads)
+	const numResults = firstVisitResults.length;
+	const avgBytes = firstVisitResults.reduce((sum, r) => sum + r.bytes, 0) / numResults;
+	const avgCO2e = firstVisitResults.reduce((sum, r) => sum + r.co2, 0) / numResults;
 
 	console.log("\n=== 🌱 Website Carbon Summary ===");
-	console.log(`Pages assessed: ${results.length}`);
+	console.log(`Pages assessed: ${numResults}`);
 	console.log(`Average size:   ${formatBytes(avgBytes)}`);
 	console.log(`Average CO₂e:   ${(avgCO2e).toFixed(2)} g per page`);
 	if (modelSupportsCarbonRating && CARBON_RATINGS) {
-			console.log(`Overall Rating: ${carbonRating(avgCO2e)}`);
+		console.log(`Overall Rating: ${carbonRating(avgCO2e)}`);
 	}
 	console.log("=================================");
 }
