@@ -24,7 +24,7 @@ const MAX_PAGES = 100;
 const CARBON_MODEL = 'swd'; // swd (latest), swd3, swd4, 1byte
 const CARBON_RATINGS = true;
 const FORCE_CRAWLER = false;
-const OUTPUT_FORMAT = 'cli'; // 'cli' (default), 'spreadsheet'
+const OUTPUT_FORMAT = 'cli'; // 'cli' (default), 'csv' (for spreadsheets, etc.)
 
 const SWDMv3Ratings = {
 	fifthPercentile: 0.095,
@@ -293,7 +293,7 @@ async function measurePage(browser, url, green = false) {
 		const co2 = bytesToCO2(totalBytes, green);
 
 		const urlPath = new URL(url).pathname;
-		if (OUTPUT_FORMAT === 'spreadsheet') {
+		if (OUTPUT_FORMAT === 'csv') {
 			if (modelSupportsCarbonRating && CARBON_RATINGS) {
 				console.log(`${urlPath}, ${formatBytes(totalByte, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}, ${carbonRating()}`);
 			} else {
@@ -366,7 +366,7 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 			co2 = bytesToCO2(totalBytes, green);
 
 			const urlPath = new URL(url).pathname;
-			if (OUTPUT_FORMAT === 'spreadsheet') {
+			if (OUTPUT_FORMAT === 'csv') {
 				if (modelSupportsCarbonRating && CARBON_RATINGS) {
 					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}, ${carbonRating()}`);
 				} else {
