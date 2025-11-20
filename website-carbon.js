@@ -7,9 +7,10 @@
  */
 
 // TODO: 
-// - Add command-line options for configuration (model, max pages, debug, etc.)
-// - Consider region / gridIntensity options for more accurate CO2 estimates
+// - Add command-line args for configuration (model, max pages, output format, debug, etc.)
+// - Add command-line arg to specify a source file with list of URLs to measure
 // - Consider how tranfer size calculations can be improved
+// - Consider region / gridIntensity options for more accurate CO2 estimates
 // - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
 
 import { co2, hosting } from "@tgwf/co2";
@@ -23,6 +24,7 @@ const MAX_PAGES = 100;
 const CARBON_MODEL = 'swd'; // swd (latest), swd3, swd4, 1byte
 const CARBON_RATINGS = true;
 const FORCE_CRAWLER = false;
+const OUTPUT_FORMAT = 'cli'; // 'cli' (default), 'spreadsheet'
 
 const SWDMv3Ratings = {
 	fifthPercentile: 0.095,
@@ -103,12 +105,20 @@ function bytesToCO2(bytes, green = false) {
 	return (modelSupportsCarbonRating) ? data.total : data; // in grams of CO2e
 }
 
+/**
+ * Determines the rating of a website's sustainability based on its CO2 emissions.
+ *
+ * @param {number} co2e - The CO2 emissions of the website in grams.
+ * @returns {string} The sustainability rating, ranging from "A+" (best) to "F" (worst).
+ */
 // https://sustainablewebdesign.org/digital-carbon-ratings/
 // https://github.com/thegreenwebfoundation/co2.js/blob/7adac52a77c886d281286f2a8926c61e6faba4fb/src/sustainable-web-design-v4.js#L337
 // https://github.com/thegreenwebfoundation/developer-docs/issues/64
+// Note: We emulate the ratingScale() function here to allow us to estimate an overall 
+// carbon rating for a website based on average CO2e. The carbon rating of individual pages
+// is returned by the co2.js library when using the SWD model with ratings enabled.
 function carbonRating(co2e = null) {
 	if (co2e !== null) {
-		// FIXME – It seems ratingScale() is not a public method in co2.js?
 		const {
 			fifthPercentile,
 			tenthPercentile,
@@ -120,48 +130,63 @@ function carbonRating(co2e = null) {
 
 		const lessThanEqualTo = (num, limit) => num <= limit;
 
-		/**
-		 * Determines the rating of a website's sustainability based on its CO2 emissions.
-		 *
-		 * @param {number} co2e - The CO2 emissions of the website in grams.
-		 * @returns {string} The sustainability rating, ranging from "A+" (best) to "F" (worst).
-		 */
-		// ratingScale(co2e) {
-			if (lessThanEqualTo(co2e, fifthPercentile)) {
-				return "A+";
-			} else if (lessThanEqualTo(co2e, tenthPercentile)) {
-				return "A";
-			} else if (lessThanEqualTo(co2e, twentiethPercentile)) {
-				return "B";
-			} else if (lessThanEqualTo(co2e, thirtiethPercentile)) {
-				return "C";
-			} else if (lessThanEqualTo(co2e, fortiethPercentile)) {
-				return "D";
-			} else if (lessThanEqualTo(co2e, fiftiethPercentile)) {
-				return "E";
-			} else {
-				return "F";
-			}
-		// }
+		if (lessThanEqualTo(co2e, fifthPercentile)) {
+			return "A+";
+		} else if (lessThanEqualTo(co2e, tenthPercentile)) {
+			return "A";
+		} else if (lessThanEqualTo(co2e, twentiethPercentile)) {
+			return "B";
+		} else if (lessThanEqualTo(co2e, thirtiethPercentile)) {
+			return "C";
+		} else if (lessThanEqualTo(co2e, fortiethPercentile)) {
+			return "D";
+		} else if (lessThanEqualTo(co2e, fiftiethPercentile)) {
+			return "E";
+		} else {
+			return "F";
+		}
 	}
 
 	return (modelSupportsCarbonRating) ? co2Data.rating : null;
 }
 
-// Source - https://stackoverflow.com/a/18650828
+// Based on - https://stackoverflow.com/a/18650828
 // Posted by anon, modified by community. See post 'Timeline' for change history
 // Retrieved 2025-11-14, License - CC BY-SA 4.0
-// Also see: https://gist.github.com/lanqy/5193417
-function formatBytes(bytes, decimals = 2) {
+function formatBytes(bytes, options = {}) {
 	if (!+bytes) return '0 Bytes';
+
+	const decimals = options.decimals || 2;
+	let unit = options.unit || null;
+	const outputUnit = (options.outputUnit === false) ? false : true;
 
 	const k = 1024;
 	const dm = decimals < 0 ? 0 : decimals;
 	const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
 
-	const i = Math.floor(Math.log(bytes) / Math.log(k));
+	let i = 0;
 
-	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+	if (unit !== null) {
+		const unitIndex = sizes.indexOf(unit);
+
+		if (unitIndex === -1) {
+             console.warn(`Unsupported unit: ${options.unit}. Using defaults.`);
+			 unit = null;
+        } else {
+            i = unitIndex;
+        }
+	}
+
+	if (unit === null) {
+		i = Math.floor(Math.log(bytes) / Math.log(k));
+	}
+
+	let unitString = '';
+	if (outputUnit === true) {
+		unitString = ` ${sizes[i]}`;
+	}
+
+	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))}${unitString}`;
 }
 
 async function fetchSitemapUrls(siteUrl) {
@@ -268,10 +293,19 @@ async function measurePage(browser, url, green = false) {
 		const co2 = bytesToCO2(totalBytes, green);
 
 		const urlPath = new URL(url).pathname;
-		if (modelSupportsCarbonRating && CARBON_RATINGS) {
-			console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e – ${carbonRating()} rating`);
-		} else {
-			console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e`);
+		if (OUTPUT_FORMAT === 'spreadsheet') {
+			if (modelSupportsCarbonRating && CARBON_RATINGS) {
+				console.log(`${urlPath}, ${formatBytes(totalByte, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}, ${carbonRating()}`);
+			} else {
+				console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}`);
+			}
+		}
+		else {
+			if (modelSupportsCarbonRating && CARBON_RATINGS) {
+				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e – ${carbonRating()} rating`);
+			} else {
+				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e`);
+			}
 		}
 
 		await page.close();
@@ -332,10 +366,18 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 			co2 = bytesToCO2(totalBytes, green);
 
 			const urlPath = new URL(url).pathname;
-			if (modelSupportsCarbonRating && CARBON_RATINGS) {
-				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e – ${carbonRating()} rating`);
+			if (OUTPUT_FORMAT === 'spreadsheet') {
+				if (modelSupportsCarbonRating && CARBON_RATINGS) {
+					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}, ${carbonRating()}`);
+				} else {
+					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}`);
+				}
 			} else {
-				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e`);
+				if (modelSupportsCarbonRating && CARBON_RATINGS) {
+					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e – ${carbonRating()} rating`);
+				} else {
+					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e`);
+				}
 			}
 		} catch (err) {
 			console.error(`Failed to load page: ${err.message}`);
