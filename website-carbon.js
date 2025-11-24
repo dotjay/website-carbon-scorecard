@@ -7,11 +7,11 @@
  */
 
 // TODO: 
-// - Add command-line arg to specify a source file with list of URLs to measure
 // - Consider how tranfer size calculations can be improved
 // - Consider region / gridIntensity options for more accurate CO2 estimates
 // - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
 
+import fs from "fs";
 import { co2, hosting } from "@tgwf/co2";
 import puppeteer from "puppeteer";
 import Crawler from "simplecrawler";
@@ -25,31 +25,37 @@ let carbonModel = 'swd'; // swd (latest), swd3, swd4, 1byte
 let carbonRatings = true; // Enable carbon ratings where supported
 let maxPages = 100; // Maximum number of pages to assess
 let outputFormat = 'cli'; // 'cli' (default), 'csv' (for spreadsheets, etc.)
+let siteUrl = null; // Site root URL to assess
+let sourceFile = null; // Optional source file with list of URLs to assess
 
 // Process args
-const siteUrl = args.pop();
+// Accept a site root as the last argument, or a list of URLs from a source file (--file <path>)
+const lastArg = args[args.length - 1];
+// Check if last argument is a valid URL, and use that if so
 try {
-	new URL(siteUrl);
-} catch (err) {
-	console.error("Invalid URL: " + siteUrl);
-	process.exit(1);	
-}
+	new URL(lastArg);
+	siteUrl = args.pop();
+} catch (err) {}
+// Process args
 for (let i = 0; i < args.length; i++) {
 	switch (args[i]) {
+		case "--file":
+			sourceFile = args[++i];
+			break;
+		case "--output":
+			outputFormat = args[++i];
+			break;
 		case "--max-pages":
 			maxPages = args[++i];
 			break;
 		case "--model":
 			carbonModel = args[++i];
 			break;
-		case "--no-ratings":
-			carbonRatings = false;
-			break;
 		case "--ratings":
 			carbonRatings = true;
 			break;
-		case "--output":
-			outputFormat = args[++i];
+		case "--no-ratings":
+			carbonRatings = false;
 			break;
 		default:
 			console.error("Unknown argument: " + args[i]);
@@ -254,6 +260,39 @@ async function fetchSitemapUrls(siteUrl) {
 	}
 }
 
+/**
+ * Reads URLs from a specified file path.
+ *
+ * @param {string} filePath - The path to the file containing URLs.
+ * @returns {string[]} An array of valid URLs.
+ */
+async function readUrlsFromFile(filePath) {
+	try {
+		const fileContents = fs.readFileSync(filePath, 'utf8');
+		// Split by new line, filter out empty lines, and trim whitespace
+		let urls = fileContents.split("\n")
+			.map(line => line.trim())
+			.filter(line => line.length > 0);
+
+		// Basic validation for URL format
+		urls = urls.filter(url => {
+			try {
+				new URL(url);
+				return true;
+			} catch (err) {
+				console.warn(`⚠️ Invalid URL skipped in file: ${url}`);
+				return false;
+			}
+		});
+
+		console.log(`📄 Using ${urls.length} URLs in ${filePath}`);
+		return urls;
+	} catch (err) {
+		console.error(`🚨 Error reading source file ${filePath}: ${err.message}`);
+		process.exit(1);
+	}
+}
+
 // Fallback crawler
 async function crawlSiteForUrls(siteUrl) {
 	return new Promise((resolve) => {
@@ -433,36 +472,67 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 }
 
 async function main() {
-	if (!siteUrl) {
-		console.log("Usage: node website-carbon.js https://example.org/");
+	if ((siteUrl === null) && (sourceFile === null)) {
+		console.log("Usage: node website-carbon.js [--max-pages <N>] [...] https://example.org/");
+		console.log("   Or: node website-carbon.js --file <path/to/urls.txt> [--max-pages <N>] [...]");
+		console.log("\nOptions:");
+		console.log("  --file <path>         Path to a text file containing list of URLs to assess (one per line)");
+		console.log("  --output <format>     Output format: 'cli' (default), 'csv'");
+		console.log("  --max-pages <N>       Maximum number of pages to assess (default: 100)");
+		console.log("  --model <model>       Carbon model to use: 'swd' (latest, i.e. 'swd4', default), 'swd3', '1byte'");
+		console.log("  --ratings             Enable carbon ratings (where supported)");
+		console.log("  --no-ratings          Disable carbon ratings");
 		process.exit(1);
+	}
+
+	if (siteUrl !== null) {
+		try {
+			new URL(siteUrl);
+		} catch (err) {
+			console.error("Invalid URL: " + siteUrl);
+			process.exit(1);    
+		}
 	}
 
 	let green = false;
 	let urls = [];
 
+	if ((siteUrl === null) && (sourceFile !== null)) {
+		urls = await readUrlsFromFile(sourceFile);
+
+		// Use the origin of the first URL as the siteUrl for green hosting check
+		siteUrl = new URL(urls[0]).origin;
+	} else {
+		// Try to get sitemap URLs
+		if (FORCE_CRAWLER) {
+			console.log("⚠️  FORCE_CRAWLER is enabled - skipping site map check.");
+		} else {
+			urls = await fetchSitemapUrls(siteUrl);
+		}
+
+		// If no site map found, try crawling instead
+		if (urls.length === 0) {
+			console.log("🕷️  Crawling site to discover pages...");
+			urls = await crawlSiteForUrls(siteUrl);
+		}
+	}
+
+	// Exit if no URLs were found
+	if (urls.length === 0) {
+		console.error("❌ No valid URLs found to assess. Exiting.");
+		process.exit(1);
+	}
+
 	// Check if hosting is green
 	// Use greenHosting(siteUrl, true) for verbose output
 	green = greenHosting(siteUrl);
 	if (green) {
-		console.log("🌿 Hosting is green!");
-	}
-
-	// Try to get sitemap URLs
-	if (FORCE_CRAWLER) {
-		console.log("⚠️  FORCE_CRAWLER is enabled - skipping site map check.");
-	} else {
-		urls = await fetchSitemapUrls(siteUrl);
-	}
-
-	// If no site map found, try crawling instead
-	if (urls.length === 0) {
-		console.log("🕷️  Crawling site to discover pages...");
-		urls = await crawlSiteForUrls(siteUrl);
+		console.log(`🌿 Hosting for '${new URL(siteUrl).hostname}' is green!`);
 	}
 
 	// Start looping through URLs
-	console.log(`\n🌍 Assessing ${siteUrl}...`);
+	const maxPagesStr = (urls.length > maxPages) ? ` (limiting to ${maxPages} pages)` : '';
+	console.log(`\n🌍 Assessing ${siteUrl}${maxPagesStr}...`);
 
 	// Launch headless browser
 	const browser = await puppeteer.launch({ headless: "new", args: ['--incognito'] });
