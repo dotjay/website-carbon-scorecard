@@ -12,7 +12,6 @@
 // - Consider region / gridIntensity options for more accurate CO2 estimates
 // - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
 
-//import { argv } from 'node:process';
 import { co2, hosting } from "@tgwf/co2";
 import puppeteer from "puppeteer";
 import Crawler from "simplecrawler";
