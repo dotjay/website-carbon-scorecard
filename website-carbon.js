@@ -7,25 +7,59 @@
  */
 
 // TODO: 
-// - Add command-line args for configuration (model, max pages, output format, debug, etc.)
 // - Add command-line arg to specify a source file with list of URLs to measure
 // - Consider how tranfer size calculations can be improved
 // - Consider region / gridIntensity options for more accurate CO2 estimates
 // - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
 
+import { argv } from 'node:process';
 import { co2, hosting } from "@tgwf/co2";
 import puppeteer from "puppeteer";
 import Crawler from "simplecrawler";
 import Sitemapper from "sitemapper";
 import { URL } from "url";
 
-const DEBUG = false;
-const MAX_PAGES = 100;
-const CARBON_MODEL = 'swd'; // swd (latest), swd3, swd4, 1byte
-const CARBON_RATINGS = true;
-const FORCE_CRAWLER = false;
-const OUTPUT_FORMAT = 'cli'; // 'cli' (default), 'csv' (for spreadsheets, etc.)
+const args = process.argv.slice(2);
 
+// Defaults
+let carbonModel = 'swd'; // swd (latest), swd3, swd4, 1byte
+let carbonRatings = true; // Enable carbon ratings where supported
+let maxPages = 100; // Maximum number of pages to assess
+let outputFormat = 'cli'; // 'cli' (default), 'csv' (for spreadsheets, etc.)
+
+// Process args
+const siteUrl = args.pop();
+try {
+	new URL(siteUrl);
+} catch (err) {
+	console.error("Invalid URL: " + siteUrl);
+	process.exit(1);	
+}
+for (let i = 0; i < args.length; i++) {
+	switch (args[i]) {
+		case "--max-pages":
+			maxPages = args[++i];
+			break;
+		case "--model":
+			carbonModel = args[++i];
+			break;
+		case "--no-ratings":
+			carbonRatings = false;
+			break;
+		case "--ratings":
+			carbonRatings = true;
+			break;
+		case "--output":
+			outputFormat = args[++i];
+			break;
+		default:
+			console.error("Unknown argument: " + args[i]);
+	}
+}
+
+// Configuration
+const DEBUG = false;
+const FORCE_CRAWLER = false;
 const SWDMv3Ratings = {
 	fifthPercentile: 0.095,
 	tenthPercentile: 0.186,
@@ -35,28 +69,28 @@ const SWDMv3Ratings = {
 	fiftiethPercentile: 0.846,
 };
 
-if (modelSupportsCarbonRating && CARBON_RATINGS === true) {
+if (modelSupportsCarbonRating && carbonRatings === true) {
 	console.log("⚠️  Warning: Carbon ratings are only available with the Sustainable Web Design Model. Carbon ratings will not display.");
 }
 
 // Using @tgwf/co2 library to estimate CO2 emissions
 var model;
 var modelSupportsCarbonRating = false;
-switch (CARBON_MODEL) {
+switch (carbonModel) {
 	case '1byte':
 		console.log("ℹ️  Carbon model: 1byte");
 		model = new co2({ model: "1byte" });
 		break;
 	case 'swd3':
 		console.log("ℹ️  Carbon model: Sustainable Web Design Model v3");
-		model = new co2({ model: "swd", version: 3, rating: CARBON_RATINGS });
+		model = new co2({ model: "swd", version: 3, rating: carbonRatings });
 		modelSupportsCarbonRating = true;
 		break;
 	case 'swd':
 	case 'swd4':
 	default:
 		console.log("ℹ️  Carbon model: Sustainable Web Design Model v4 (latest)");
-		model = new co2({ model: "swd", version: 4, rating: CARBON_RATINGS });
+		model = new co2({ model: "swd", version: 4, rating: carbonRatings });
 		modelSupportsCarbonRating = true;
 		break;
 }
@@ -75,7 +109,7 @@ function bytesToCO2(bytes, green = false) {
 	// If hosting is green, green hosting factor = 1 (handled in co2.js)
 	// https://sustainablewebdesign.org/estimating-digital-emissions/#faq-question-1713777503222
 	var data;
-	if (CARBON_MODEL === 'swd3') {
+	if (carbonModel === 'swd3') {
 		// SWD v3
 		// perByte(
 		// 	bytes,
@@ -214,7 +248,7 @@ async function fetchSitemapUrls(siteUrl) {
 		const urls = sites.map(site => site.loc);
 		console.log(`📄 Found ${urls.length} URLs in the site map`);
 
-		return urls.slice(0, MAX_PAGES);
+		return urls.slice(0, maxPages);
 	} catch (err) {
 		console.log("⚠️  Could not fetch or parse site map:", err);
 		return [];
@@ -229,7 +263,7 @@ async function crawlSiteForUrls(siteUrl) {
 
 		crawler.maxDepth = 3;
 		crawler.maxConcurrency = 3;
-		crawler.maxResources = MAX_PAGES;
+		crawler.maxResources = maxPages;
 		crawler.downloadUnsupported = false;
 
 		// Exclude certain file types, such as CSS, JS, images, videos, archives
@@ -239,7 +273,7 @@ async function crawlSiteForUrls(siteUrl) {
 
 		crawler.on("fetchcomplete", (queueItem) => {
 			crawledUrls.push(queueItem.url);
-			if (crawledUrls.length >= MAX_PAGES) {
+			if (crawledUrls.length >= maxPages) {
 				crawler.stop();
 			}
 		});
@@ -293,15 +327,15 @@ async function measurePage(browser, url, green = false) {
 		const co2 = bytesToCO2(totalBytes, green);
 
 		const urlPath = new URL(url).pathname;
-		if (OUTPUT_FORMAT === 'csv') {
-			if (modelSupportsCarbonRating && CARBON_RATINGS) {
+		if (outputFormat === 'csv') {
+			if (modelSupportsCarbonRating && carbonRatings) {
 				console.log(`${urlPath}, ${formatBytes(totalByte, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}, ${carbonRating()}`);
 			} else {
 				console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}`);
 			}
 		}
 		else {
-			if (modelSupportsCarbonRating && CARBON_RATINGS) {
+			if (modelSupportsCarbonRating && carbonRatings) {
 				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e – ${carbonRating()} rating`);
 			} else {
 				console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${(co2).toFixed(3)}g CO₂e`);
@@ -366,14 +400,14 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 			co2 = bytesToCO2(totalBytes, green);
 
 			const urlPath = new URL(url).pathname;
-			if (OUTPUT_FORMAT === 'csv') {
-				if (modelSupportsCarbonRating && CARBON_RATINGS) {
+			if (outputFormat === 'csv') {
+				if (modelSupportsCarbonRating && carbonRatings) {
 					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}, ${carbonRating()}`);
 				} else {
 					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}`);
 				}
 			} else {
-				if (modelSupportsCarbonRating && CARBON_RATINGS) {
+				if (modelSupportsCarbonRating && carbonRatings) {
 					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e – ${carbonRating()} rating`);
 				} else {
 					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e`);
@@ -400,7 +434,6 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 }
 
 async function main() {
-	const siteUrl = process.argv[2];
 	if (!siteUrl) {
 		console.log("Usage: node website-carbon.js https://example.org/");
 		process.exit(1);
@@ -429,14 +462,14 @@ async function main() {
 		urls = await crawlSiteForUrls(siteUrl);
 	}
 
-	// Loop through up to MAX_PAGES
+	// Start looping through URLs
 	console.log(`\n🌍 Assessing ${siteUrl}...`);
 
 	// Launch headless browser
 	const browser = await puppeteer.launch({ headless: "new", args: ['--incognito'] });
 
-	// Limit to MAX_PAGES
-	urls = urls.slice(0, MAX_PAGES);
+	// Limit to maxPages
+	urls = urls.slice(0, maxPages);
 
 	// First visits (cold loads)
 	console.log(`\n🔄 First visits...`);
@@ -469,7 +502,7 @@ async function main() {
 	console.log(`Pages assessed: ${numResults}`);
 	console.log(`Average size:   ${formatBytes(avgBytes)}`);
 	console.log(`Average CO₂e:   ${(avgCO2e).toFixed(2)} g per page`);
-	if (modelSupportsCarbonRating && CARBON_RATINGS) {
+	if (modelSupportsCarbonRating && carbonRatings) {
 		console.log(`Overall Rating: ${carbonRating(avgCO2e)}`);
 	}
 	console.log("=================================");
