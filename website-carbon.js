@@ -253,7 +253,7 @@ async function fetchSitemapUrls(siteUrl) {
 		const urls = sites.map(site => site.loc);
 		console.log(`📄 Found ${urls.length} URLs in the site map`);
 
-		return urls.slice(0, maxPages);
+		return urls; // Return all URLs; we'll limit later
 	} catch (err) {
 		console.log("⚠️  Could not fetch or parse site map:", err);
 		return [];
