@@ -24,6 +24,7 @@ const args = process.argv.slice(2);
 let carbonModel = 'swd'; // swd (latest), swd3, swd4, 1byte
 let carbonRatings = true; // Enable carbon ratings where supported
 let maxPages = 100; // Maximum number of pages to assess
+let measureEvent = 'cdp'; // 'cdp' (Chrome DevTools Protocol, default), 'idle'
 let outputFormat = 'cli'; // 'cli' (default), 'csv' (for spreadsheets, etc.)
 let siteUrl = null; // Site root URL to assess
 let sourceFile = null; // Optional source file with list of URLs to assess
@@ -47,6 +48,9 @@ for (let i = 0; i < args.length; i++) {
 			break;
 		case "--max-pages":
 			maxPages = args[++i];
+			break;
+		case "--measure-event":
+			measureEvent = args[++i];
 			break;
 		case "--model":
 			carbonModel = args[++i];
@@ -102,7 +106,7 @@ switch (carbonModel) {
 
 var co2Data = {};
 
-function bytesToCO2(bytes, green = false) {
+function bytesToCO2(bytes, isGreen = false) {
 	if (bytes === 0) {
 		co2Data = {
 			total: 0,
@@ -133,7 +137,7 @@ function bytesToCO2(bytes, green = false) {
 		// 	ratingResults = false,
 		// 	options = {}
 		// )
-		data = model.perByte(bytes, green);
+		data = model.perByte(bytes, isGreen);
 	}
 	
 	co2Data = {
@@ -347,10 +351,32 @@ async function greenHosting(siteUrl, verbose = false) {
 	return verbose ? response.green : response;
 }
 
-async function measurePage(browser, url, green = false) {
-	const page = await browser.newPage();
+/**
+ * Measures the total transfer size (in bytes) and estimated CO2 for a single page load (once idle).
+ * @param {object} browser - Puppeteer Browser instance.
+ * @param {string} url - The URL to navigate to.
+ * @param {object} options - 'clearCache', 'isGreen'.
+ */
+async function measurePageIdle(browser, url, options = {}) {
+	const {
+		clearCache = false,
+		isGreen = false
+	} = options;
+
+	let page = await browser.newPage();; 
 	let totalBytes = 0;
 
+	// Handle cache clearing
+	if (clearCache) {
+		const client = await page.target().createCDPSession();
+		await client.send('Network.clearBrowserCache');
+		if (DEBUG) {
+			console.log(`Cache cleared for ${url}.`);
+		}
+	} else if (DEBUG) {
+		console.log(`Cache not cleared.`);
+	}
+	
 	page.on("response", async (response) => {
 		try {
 			const buffer = await response.buffer();
@@ -361,8 +387,9 @@ async function measurePage(browser, url, green = false) {
 	});
 
 	try {
+		// https://pptr.dev/api/puppeteer.puppeteerlifecycleevent
 		await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
-		const co2 = bytesToCO2(totalBytes, green);
+		const co2 = bytesToCO2(totalBytes, isGreen);
 
 		const urlPath = new URL(url).pathname;
 		if (outputFormat === 'csv') {
@@ -390,15 +417,18 @@ async function measurePage(browser, url, green = false) {
 }
 
 /**
- * Measures the total transfer size (in bytes) and estimated CO2 for a single page load.
+ * Measures the total transfer size (in bytes) and estimated CO2 for a single page load (with Chrome DevTools Protocol).
  * @param {object} browser - Puppeteer Browser instance.
  * @param {string} url - The URL to navigate to.
- * @param {boolean} green - Whether the hosting is considered 'green'.
- * @param {boolean} clearCache - If true, clears the browser cache before navigation.
+ * @param {object} options - 'clearCache', 'isGreen'.
  */
-// Alternative version measuring with CDP (Chrome DevTools Protocol)
 // https://www.ashjohns.dev/blog/measuring-page-weight
-async function measurePageCDP(browser, url, green = false, clearCache = false) {
+async function measurePageCDP(browser, url, options = {}) {
+	const {
+		clearCache = false,
+		isGreen = false
+	} = options;
+
 	let client = null;
 	let page = null;
 	let totalBytes = 0;
@@ -410,16 +440,18 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 		await page.setViewport({ width: 1900, height: 1000 });
 
 		// Enable network tracking to capture transfer sizes
-		client = await page.createCDPSession();
+		client = await page.target().createCDPSession();
 		await client.send('Network.enable');
 
 		// Handle cache clearing
 		if (clearCache) {
 			// CDP command to clear all browser caches (disk and memory)
 			await client.send('Network.clearBrowserCache');
-			if (DEBUG) console.log(`COLD LOAD measurement. Cache cleared for ${url}.`);
-		} else {
-			if (DEBUG) console.log(`WARM LOAD measurement.`);
+			if (DEBUG) {
+				console.log(`Cache cleared for ${url}.`);
+			}
+		} else if (DEBUG) {
+			console.log(`Cache not cleared.`);
 		}
 
 		// Listen for network loading finished events to accumulate transfer sizes
@@ -435,7 +467,7 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 			await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
 
 			// Estimate CO2 based on total bytes transferred
-			co2 = bytesToCO2(totalBytes, green);
+			co2 = bytesToCO2(totalBytes, isGreen);
 
 			const urlPath = new URL(url).pathname;
 			if (outputFormat === 'csv') {
@@ -471,17 +503,35 @@ async function measurePageCDP(browser, url, green = false, clearCache = false) {
 	}
 }
 
+/**
+ * Measures the total transfer size (in bytes) and estimated CO2 for a single page load.
+ * @param {object} browser - Puppeteer Browser instance.
+ * @param {string} url - The URL to navigate to.
+ * @param {object} options - 'clearCache', 'event', 'isGreen'.
+ */
+async function measurePage(browser, url, options = {}) {
+	const event = options.event || 'cdp';
+
+	if (event === 'idle') {
+		return await measurePageIdle(browser, url, options);
+	}
+	else { // Default to 'cdp' (Chrome DevTools Protocol)
+		return await measurePageCDP(browser, url, options);
+	}
+}
+
 async function main() {
 	if ((siteUrl === null) && (sourceFile === null)) {
 		console.log("Usage: node website-carbon.js [--max-pages <N>] [...] https://example.org/");
 		console.log("   Or: node website-carbon.js --file <path/to/urls.txt> [--max-pages <N>] [...]");
-		console.log("\nOptions:");
-		console.log("  --file <path>         Path to a text file containing list of URLs to assess (one per line)");
-		console.log("  --output <format>     Output format: 'cli' (default), 'csv'");
-		console.log("  --max-pages <N>       Maximum number of pages to assess (default: 100)");
-		console.log("  --model <model>       Carbon model to use: 'swd' (latest, i.e. 'swd4', default), 'swd3', '1byte'");
-		console.log("  --ratings             Enable carbon ratings (where supported)");
-		console.log("  --no-ratings          Disable carbon ratings");
+		console.log("\nOptions: ");
+		console.log("  --file <path>           Path to a text file containing list of URLs to assess (one per line)");
+		console.log("  --output <format>       Output format: 'cli' (default), 'csv'");
+		console.log("  --max-pages <N>         Maximum number of pages to assess (default: 50)");
+		console.log("  --measure-event <mode>  When to measure page size: 'cdp' (Chrome DevTools Protocol, default), 'idle'");
+		console.log("  --model <model>         Carbon model to use: 'swd' (latest, i.e. 'swd4', default), 'swd3', '1byte'");
+		console.log("  --ratings               Enable carbon ratings (where supported, default)");
+		console.log("  --no-ratings            Disable carbon ratings");
 		process.exit(1);
 	}
 
@@ -494,7 +544,7 @@ async function main() {
 		}
 	}
 
-	let green = false;
+	let isGreen = false;
 	let urls = [];
 
 	if ((siteUrl === null) && (sourceFile !== null)) {
@@ -525,8 +575,8 @@ async function main() {
 
 	// Check if hosting is green
 	// Use greenHosting(siteUrl, true) for verbose output
-	green = greenHosting(siteUrl);
-	if (green) {
+	isGreen = greenHosting(siteUrl);
+	if (isGreen) {
 		console.log(`🌿 Hosting for '${new URL(siteUrl).hostname}' is green!`);
 	}
 
@@ -535,7 +585,8 @@ async function main() {
 	console.log(`\n🌍 Assessing ${siteUrl}${maxPagesStr}...`);
 
 	// Launch headless browser
-	const browser = await puppeteer.launch({ headless: "new", args: ['--incognito'] });
+	// const browser = await puppeteer.launch({ headless: "new", args: ['--incognito'] });
+	const browser = await puppeteer.launch({ headless: "new" });
 
 	// Limit to maxPages
 	urls = urls.slice(0, maxPages);
@@ -544,7 +595,7 @@ async function main() {
 	console.log(`\n🔄 First visits...`);
 	const firstVisitResults = [];
 	for (const url of urls) {
-		const firstVisit = await measurePageCDP(browser, url, green, true);
+		const firstVisit = await measurePage(browser, url, { event: measureEvent, isGreen: isGreen, clearCache: true });
 		if (firstVisit) {
 			firstVisitResults.push(firstVisit);
 		}
@@ -554,7 +605,7 @@ async function main() {
 	console.log(`\n💾 Return visits...`);
 	const returnVisitResults = [];
 	for (const url of urls) {
-		const returnVisit= await measurePageCDP(browser, url, green, false);
+		const returnVisit= await measurePage(browser, url, { event: measureEvent, isGreen: isGreen });
 		if (returnVisit) {
 			returnVisitResults.push(returnVisit);
 		}
