@@ -394,7 +394,7 @@ async function measurePageIdle(browser, url, options = {}) {
 			const buffer = await response.buffer();
 			totalBytes += buffer.length;
 		} catch {
-			// skip failed responses
+			// Skip failed responses
 		}
 	});
 
@@ -422,7 +422,7 @@ async function measurePageIdle(browser, url, options = {}) {
 		await page.close();
 		return { url, bytes: totalBytes, co2 };
 	} catch (err) {
-		console.error(`⚠️ Failed to load ${url}: ${err.message}`);
+		console.error(`⚠️ measurePageIdle: Failed to load ${url}: ${err.message}`);
 		await page.close();
 		return null;
 	}
@@ -496,7 +496,7 @@ async function measurePageCDP(browser, url, options = {}) {
 				}
 			}
 		} catch (err) {
-			console.error(`Failed to load page: ${err.message}`);
+			console.error(`⚠️ measurePageCDP: Failed to load page: ${err.message}`);
 		} finally {
 			if (client) {
 				// Remove event listener and close the CDP session
@@ -510,7 +510,7 @@ async function measurePageCDP(browser, url, options = {}) {
 
 		return { url, bytes: totalBytes, co2 };
 	} catch (err) {
-		console.error(`⚠️ Failed to load ${url}: ${err.message}`);
+		console.error(`⚠️ measurePageCDP: Failed to load ${url}: ${err.message}`);
 		return null;
 	}
 }
