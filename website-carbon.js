@@ -11,6 +11,7 @@
 // - Consider region / gridIntensity options for more accurate CO2 estimates
 // - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
 
+// Imports
 import fs from "fs";
 import { co2, hosting } from "@tgwf/co2";
 import puppeteer from "puppeteer";
@@ -18,7 +19,9 @@ import Crawler from "simplecrawler";
 import Sitemapper from "sitemapper";
 import { URL } from "url";
 
-const args = process.argv.slice(2);
+// Configuration
+const DEBUG = false;
+const FORCE_CRAWLER = false;
 
 // Defaults
 let carbonModel = 'swd'; // swd (latest), swd3, swd4, 1byte
@@ -30,8 +33,11 @@ let siteUrl = null; // Site root URL to assess
 let sourceFile = null; // Optional source file with list of URLs to assess
 
 // Process args
+const args = process.argv.slice(2);
+
 // Accept a site root as the last argument, or a list of URLs from a source file (--file <path>)
 const lastArg = args[args.length - 1];
+
 // Check if last argument is a valid URL, and use that if so
 try {
 	new URL(lastArg);
@@ -66,9 +72,7 @@ for (let i = 0; i < args.length; i++) {
 	}
 }
 
-// Configuration
-const DEBUG = false;
-const FORCE_CRAWLER = false;
+// Constants
 const SWDMv3Ratings = {
 	fifthPercentile: 0.095,
 	tenthPercentile: 0.186,
