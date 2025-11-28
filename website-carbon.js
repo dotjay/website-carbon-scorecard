@@ -73,13 +73,21 @@ for (let i = 0; i < args.length; i++) {
 }
 
 // Constants
-const SWDMv3Ratings = {
+const SWDM3_RATINGS = {
 	fifthPercentile: 0.095,
 	tenthPercentile: 0.186,
 	twentiethPercentile: 0.341,
 	thirtiethPercentile: 0.493,
 	fortiethPercentile: 0.656,
 	fiftiethPercentile: 0.846,
+};
+const SWDM4_RATINGS = {
+	fifthPercentile: 0.04,
+	tenthPercentile: 0.079,
+	twentiethPercentile: 0.145,
+	thirtiethPercentile: 0.209,
+	fortiethPercentile: 0.278,
+	fiftiethPercentile: 0.359,
 };
 
 if (modelSupportsCarbonRating && carbonRatings === true) {
@@ -173,7 +181,7 @@ function carbonRating(co2e = null) {
 			thirtiethPercentile,
 			fortiethPercentile,
 			fiftiethPercentile,
-		} = SWDMv3Ratings;
+		} = (carbonModel === 'swd3') ? SWDM3_RATINGS : SWDM4_RATINGS;
 
 		const lessThanEqualTo = (num, limit) => num <= limit;
 
@@ -217,11 +225,11 @@ function formatBytes(bytes, options = {}) {
 		const unitIndex = sizes.indexOf(unit);
 
 		if (unitIndex === -1) {
-             console.warn(`Unsupported unit: ${options.unit}. Using defaults.`);
+			 console.warn(`Unsupported unit: ${options.unit}. Using defaults.`);
 			 unit = null;
-        } else {
-            i = unitIndex;
-        }
+		} else {
+			i = unitIndex;
+		}
 	}
 
 	if (unit === null) {
