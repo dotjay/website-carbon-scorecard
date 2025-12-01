@@ -157,7 +157,7 @@ function bytesToCO2(bytes, isGreen = false) {
 		rating: modelSupportsCarbonRating ? data.rating : null
 	};
 
-	return (modelSupportsCarbonRating) ? data.total : data; // in grams of CO2e
+	return (modelSupportsCarbonRating && carbonRatings) ? data.total : data; // in grams of CO2e
 }
 
 /**
