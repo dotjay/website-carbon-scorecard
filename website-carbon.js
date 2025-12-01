@@ -309,7 +309,8 @@ async function readUrlsFromFile(filePath) {
 		// Split by new line, filter out empty lines, and trim whitespace
 		let urls = fileContents.split("\n")
 			.map(line => line.trim())
-			.filter(line => line.length > 0);
+			.filter(line => line.length > 0)
+			.filter(line => !line.startsWith('#'));
 
 		// Basic validation for URL format
 		urls = urls.filter(url => {
