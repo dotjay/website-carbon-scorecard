@@ -322,7 +322,7 @@ async function readUrlsFromFile(filePath) {
 			}
 		});
 
-		console.log(`📄 Using ${urls.length} URLs in ${filePath}`);
+		console.log(`📄 Using ${urls.length} URLs in '${filePath}'`);
 		return urls;
 	} catch (err) {
 		console.error(`🚨 Error reading source file ${filePath}: ${err.message}`);
@@ -680,7 +680,7 @@ async function main() {
 	if (modelSupportsCarbonRating && carbonRatings) {
 		console.log(`Overall Rating: ${carbonRating(avgCO2e)}`);
 	}
-	console.log("=================================");
+	console.log(  "=================================");
 }
 
 main();
