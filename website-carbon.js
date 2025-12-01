@@ -98,9 +98,11 @@ if (modelSupportsCarbonRating && carbonRatings === true) {
 }
 
 // Using @tgwf/co2 library to estimate CO2 emissions
-// Inform as to which model is being used
+var co2Data = {};
 var model;
 var modelSupportsCarbonRating = false;
+
+// Inform as to which model is being used
 switch (carbonModel) {
 	case '1byte':
 		console.log("ℹ️  Carbon model: 1byte");
@@ -119,8 +121,6 @@ switch (carbonModel) {
 		modelSupportsCarbonRating = true;
 		break;
 }
-
-var co2Data = {};
 
 /**
  * Converts bytes transferred to estimated CO2 emissions using the selected carbon model.
