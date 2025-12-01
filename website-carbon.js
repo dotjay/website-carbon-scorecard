@@ -7,9 +7,10 @@
  */
 
 // TODO: 
-// - Consider how tranfer size calculations can be improved
+// - Extend to allow other measurement events: idle0, idle2, load, domcontentloaded
 // - Consider region / gridIntensity options for more accurate CO2 estimates
-// - Run Puppeteer pages in parallel for increased speed (3-5 pages at a time?)
+// - Consider other ways the transfer size calculations can be improved
+// - Run Puppeteer pages in parallel to speed things up (3-5 pages at a time?)
 
 // Imports
 import fs from "fs";
@@ -24,13 +25,13 @@ const DEBUG = false;
 const FORCE_CRAWLER = false;
 
 // Defaults
-let carbonModel = 'swd'; // swd (latest), swd3, swd4, 1byte
-let carbonRatings = true; // Enable carbon ratings where supported
-let maxPages = 100; // Maximum number of pages to assess
-let measureEvent = 'cdp'; // 'cdp' (Chrome DevTools Protocol, default), 'idle'
-let outputFormat = 'cli'; // 'cli' (default), 'csv' (for spreadsheets, etc.)
-let siteUrl = null; // Site root URL to assess
-let sourceFile = null; // Optional source file with list of URLs to assess
+let carbonModel = 'swd';   // swd (latest), swd3, swd4, 1byte
+let carbonRatings = true;  // Enable carbon ratings where supported
+let maxPages = 100;        // Maximum number of pages to assess
+let measureEvent = 'cdp';  // 'cdp' (Chrome DevTools Protocol, default), 'idle'
+let outputFormat = 'cli';  // 'cli' (default), 'csv' (for spreadsheets, etc.)
+let siteUrl = null;        // Site root URL to assess
+let sourceFile = null;     // Optional source file with list of URLs to assess
 
 // Process args
 const args = process.argv.slice(2);
@@ -38,11 +39,13 @@ const args = process.argv.slice(2);
 // Accept a site root as the last argument, or a list of URLs from a source file (--file <path>)
 const lastArg = args[args.length - 1];
 
-// Check if last argument is a valid URL, and use that if so
+// Check if last argument is a valid URL to use
+// If not, we check --file for a source file below
 try {
 	new URL(lastArg);
 	siteUrl = args.pop();
 } catch (err) {}
+
 // Process args
 for (let i = 0; i < args.length; i++) {
 	switch (args[i]) {
@@ -95,6 +98,7 @@ if (modelSupportsCarbonRating && carbonRatings === true) {
 }
 
 // Using @tgwf/co2 library to estimate CO2 emissions
+// Inform as to which model is being used
 var model;
 var modelSupportsCarbonRating = false;
 switch (carbonModel) {
@@ -118,6 +122,13 @@ switch (carbonModel) {
 
 var co2Data = {};
 
+/**
+ * Converts bytes transferred to estimated CO2 emissions using the selected carbon model.
+ * 
+ * @param {number} bytes - The number of bytes transferred.
+ * @param {boolean} [isGreen=false] - Whether the hosting is green (affects calculation). Default: false.
+ * @returns {number} Estimated CO2 emissions in grams.
+ */
 function bytesToCO2(bytes, isGreen = false) {
 	if (bytes === 0) {
 		co2Data = {
@@ -161,10 +172,10 @@ function bytesToCO2(bytes, isGreen = false) {
 }
 
 /**
- * Determines the rating of a website's sustainability based on its CO2 emissions.
+ * Determines the Digital Carbon Rating based on estimated CO2 emissions.
  *
- * @param {number} co2e - The CO2 emissions of the website in grams.
- * @returns {string} The sustainability rating, ranging from "A+" (best) to "F" (worst).
+ * @param {number} co2e - The estimated CO2 emissions of a website in grams.
+ * @returns {string} The Digital Carbon Rating, ranging from "A+" (best) to "F" (worst).
  */
 // https://sustainablewebdesign.org/digital-carbon-ratings/
 // https://github.com/thegreenwebfoundation/co2.js/blob/7adac52a77c886d281286f2a8926c61e6faba4fb/src/sustainable-web-design-v4.js#L337
@@ -205,7 +216,17 @@ function carbonRating(co2e = null) {
 	return (modelSupportsCarbonRating) ? co2Data.rating : null;
 }
 
-// Based on - https://stackoverflow.com/a/18650828
+/**
+ * Formats bytes as a human-readable string.
+ *
+ * @param {number} bytes - Number of bytes to format.
+ * @param {object} [options] - Options object.
+ * @param {number} [options.decimals=2] - Number of decimals to display. Default: 2.
+ * @param {boolean} [options.outputUnit=true] - Whether to include the unit in the output. Default: true.
+ * @param {string} [options.unit] - Force output in a specific unit (e.g., 'KB', 'MB').
+ * @returns {string} Bytes as a formatted string.
+ */
+// Based on: https://stackoverflow.com/a/18650828
 // Posted by anon, modified by community. See post 'Timeline' for change history
 // Retrieved 2025-11-14, License - CC BY-SA 4.0
 function formatBytes(bytes, options = {}) {
@@ -309,7 +330,12 @@ async function readUrlsFromFile(filePath) {
 	}
 }
 
-// Fallback crawler
+/** 
+ * Crawls a website to discover URLs up to a maximum number of pages.
+ * 
+ * @param {string} siteUrl - The root URL of the site to crawl.
+ * @returns {Promise<string[]>} A promise that resolves to an array of URLs.
+ */
 async function crawlSiteForUrls(siteUrl) {
 	return new Promise((resolve) => {
 		const crawler = new Crawler(siteUrl);
@@ -365,9 +391,13 @@ async function greenHosting(siteUrl, verbose = false) {
 
 /**
  * Measures the total transfer size (in bytes) and estimated CO2 for a single page load (once idle).
- * @param {object} browser - Puppeteer Browser instance.
- * @param {string} url - The URL to navigate to.
- * @param {object} options - 'clearCache', 'isGreen'.
+ * 
+ * @param {object} browser - Puppeteer browser instance.
+ * @param {string} url - The URL of the page to measure.
+ * @param {object} [options] - Options object.
+ * @param {boolean} [options.clearCache=false] - Whether to clear the browser cache before loading the page. Default: false.
+ * @param {boolean} [options.isGreen=false] - Whether the hosting is green (affects calculation). Default: false.
+ * @return {object|null} Measurement result with 'url', 'bytes', 'co2'. Failure: null.
  */
 async function measurePageIdle(browser, url, options = {}) {
 	const {
@@ -430,9 +460,13 @@ async function measurePageIdle(browser, url, options = {}) {
 
 /**
  * Measures the total transfer size (in bytes) and estimated CO2 for a single page load (with Chrome DevTools Protocol).
- * @param {object} browser - Puppeteer Browser instance.
- * @param {string} url - The URL to navigate to.
- * @param {object} options - 'clearCache', 'isGreen'.
+ * 
+ * @param {object} browser - Puppeteer browser instance.
+ * @param {string} url - The URL of the page to measure.
+ * @param {object} [options] - Options object.
+ * @param {boolean} [options.clearCache=false] - Whether to clear the browser cache before loading the page. Default: false.
+ * @param {boolean} [options.isGreen=false] - Whether the hosting is green (affects calculation). Default: false.
+ * @return {object|null} Measurement result with 'url', 'bytes', 'co2'. Failure: null.
  */
 // https://www.ashjohns.dev/blog/measuring-page-weight
 async function measurePageCDP(browser, url, options = {}) {
@@ -517,13 +551,19 @@ async function measurePageCDP(browser, url, options = {}) {
 
 /**
  * Measures the total transfer size (in bytes) and estimated CO2 for a single page load.
- * @param {object} browser - Puppeteer Browser instance.
- * @param {string} url - The URL to navigate to.
- * @param {object} options - 'clearCache', 'event', 'isGreen'.
+ * 
+ * @param {object} browser - Puppeteer browser instance.
+ * @param {string} url - The URL of the page to measure.
+ * @param {object} [options] - Options object.
+ * @param {boolean} [options.clearCache=false] - Whether to clear the browser cache before loading the page. Default: false.
+ * @param {string} [options.event='cdp'] - When to measure page size: 'cdp' (Chrome DevTools Protocol), 'idle'. Default: 'cdp'.
+ * @param {boolean} [options.isGreen=false] - Whether the hosting is green (affects calculation). Default: false.
+ * @return {object|null} Measurement result with 'url', 'bytes', 'co2'. Failure: null.
  */
 async function measurePage(browser, url, options = {}) {
 	const event = options.event || 'cdp';
 
+	// TODO - Extend to allow other measurement events: idle0, idle2, load, domcontentloaded
 	if (event === 'idle') {
 		return await measurePageIdle(browser, url, options);
 	}
@@ -532,6 +572,9 @@ async function measurePage(browser, url, options = {}) {
 	}
 }
 
+/**
+ * Main function for the website carbon assessment.
+ */
 async function main() {
 	if ((siteUrl === null) && (sourceFile === null)) {
 		console.log("Usage: node website-carbon.js [--max-pages <N>] [...] https://example.org/");
