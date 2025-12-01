@@ -310,7 +310,8 @@ async function readUrlsFromFile(filePath) {
 		let urls = fileContents.split("\n")
 			.map(line => line.trim())
 			.filter(line => line.length > 0)
-			.filter(line => !line.startsWith('#'));
+			.filter(line => !line.startsWith('#'))
+			.filter(line => !line.startsWith('//'));
 
 		// Basic validation for URL format
 		urls = urls.filter(url => {
