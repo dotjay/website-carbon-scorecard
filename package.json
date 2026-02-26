@@ -1,21 +1,22 @@
 {
-  "name": "digital-carbon-scorecard",
+  "name": "website-carbon-scorecard.js",
   "version": "1.0.0",
-  "description": "A simple digital carbon scorecard generator",
+  "description": "A command-line tool for estimating the carbon emissions of a website.",
   "keywords": [
     "digital",
+    "website",
     "sustainability",
     "carbon",
     "audit",
     "scorecard"
   ],
-  "homepage": "https://bitbucket.org/asitshouldbe/digital-carbon-scorecard#readme",
+  "homepage": "https://github.com/dotjay/website-carbon-scorecard",
   "bugs": {
-    "url": "https://bitbucket.org/asitshouldbe/digital-carbon-scorecard/issues"
+    "url": "https://github.com/dotjay/website-carbon-scorecard/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@bitbucket.org/asitshouldbe/digital-carbon-scorecard.git"
+    "url": "git+ssh://git@github.com:dotjay/website-carbon-scorecard.git"
   },
   "license": "Apache-2.0",
   "author": "Jon Gibbins",
