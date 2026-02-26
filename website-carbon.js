@@ -507,7 +507,7 @@ async function measurePageIdle(browser, url, options = {}) {
 		const urlPath = new URL(url).pathname;
 		if (outputFormat === 'csv') {
 			if (modelSupportsCarbonRating && carbonRatings) {
-				console.log(`${urlPath}, ${formatBytes(totalByte, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}, ${carbonRating()}`);
+				console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}, ${carbonRating()}`);
 			} else {
 				console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${(co2).toFixed(3)}`);
 			}
