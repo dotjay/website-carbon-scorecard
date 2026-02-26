@@ -509,6 +509,8 @@ async function measurePage(browser, url, options = {}) {
 		}
 
 		// Handle different measurement modes
+		// TODO - Try using Network.dataReceived (https://stackoverflow.com/questions/48263345/how-can-i-get-the-raw-download-size-of-a-request-using-puppeteer)
+		// TODO - Try using 'content-length' header (https://github.com/puppeteer/puppeteer/issues/3372)
 		let onLoadingFinished = null;
 		if (mode === 'cdp') {
 			// Approach 1: Listen for CDP's 'Network.responseReceived' events and sum 'encodedDataLength'
@@ -547,22 +549,6 @@ async function measurePage(browser, url, options = {}) {
 
 			// Estimate CO2 based on total bytes transferred
 			co2 = bytesToCO2(totalBytes, isGreen);
-
-			// Output results
-			const urlPath = new URL(url).pathname;
-			if (outputFormat === 'csv') {
-				if (modelSupportsCarbonRating && carbonRatings) {
-					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}, ${carbonRating()}`);
-				} else {
-					console.log(`${urlPath}, ${formatBytes(totalBytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}`);
-				}
-			} else {
-				if (modelSupportsCarbonRating && carbonRatings) {
-					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e – ${carbonRating()} rating`);
-				} else {
-					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e`);
-				}
-			}
 		} catch (e) {
 			console.warn(`⚠️  measurePage: Failed to load page: ${e.message}`);
 		} finally {
@@ -576,11 +562,53 @@ async function measurePage(browser, url, options = {}) {
 			await page.close();
 		}
 
-		return { url, bytes: totalBytes, co2 };
+		return {
+			url,
+			bytes: totalBytes,
+			co2,
+			rating: (modelSupportsCarbonRating && carbonRatings) ? carbonRating() : null
+		};
 	} catch (e) {
 		console.warn(`⚠️  measurePage: Failed to load ${url}: ${e.message}`);
 		return null;
 	}
+}
+
+/**
+ * Outputs results to the console in the specified format.
+ *
+ * @param {Array} results - The results to output, where each item is an object with 'url', 'bytes', and 'co2' properties.
+ */
+function outputResults(results, sortFn = null) {
+	if (typeof sortFn === 'function') {
+		results.sort(sortFn);
+	}
+
+	for (const { url, bytes, co2, rating } of results) {
+		const urlPath = new URL(url).pathname;
+		if (outputFormat === 'csv') {
+			if (carbonRatings && rating !== null) {
+				console.log(`${urlPath}, ${formatBytes(bytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}, ${rating}`);
+			} else {
+				console.log(`${urlPath}, ${formatBytes(bytes, { unit: 'KB', 'outputUnit': false })}, ${co2.toFixed(3)}`);
+			}
+		} else {
+			if (carbonRatings && rating !== null) {
+				console.log(`${urlPath} – ${formatBytes(bytes)} – ${co2.toFixed(3)}g CO₂e – ${rating} rating`);
+			} else {
+				console.log(`${urlPath} – ${formatBytes(bytes)} – ${co2.toFixed(3)}g CO₂e`);
+			}
+		}
+	}
+}
+
+/**
+ * Sorts results by URL alphabetically for clean output.
+ */
+function outputSortAlphabetically(a, b) {
+	var textA = a.url.toLowerCase();
+	var textB = b.url.toLowerCase();
+	return (textA < textB) ? -1 : (textA > textB) ? 1 : 0;
 }
 
 /**
@@ -662,12 +690,14 @@ async function main() {
 	const firstVisitResults = await processInBatches(urls, concurrency, (url) =>
 		measurePage(browser, url, { clearCache: true, isGreen, event: measureEvent, mode: measureMode })
 	);
+	outputResults(firstVisitResults, outputSortAlphabetically);
 
 	// Return visits (warm loads)
 	console.log(`\n💾 Return visits...`);
 	const returnVisitResults = await processInBatches(urls, concurrency, (url) =>
 		measurePage(browser, url, { clearCache: false, isGreen, event: measureEvent, mode: measureMode })
 	);
+	outputResults(returnVisitResults, outputSortAlphabetically);
 
 	await browser.close();
 
