@@ -3,7 +3,7 @@
 /**
  * website-carbon.js
  * 
- * A CLI tool to estimate the carbon emissions of a website.
+ * A command-line tool for estimating the carbon emissions of a website.
  */
 
 // TODO: 
@@ -15,6 +15,7 @@
 
 // Imports
 import fs from "fs";
+import { parseArgs } from 'node:util';
 import { co2, hosting } from "@tgwf/co2";
 import puppeteer from "puppeteer";
 import Crawler from "simplecrawler";
@@ -25,56 +26,95 @@ import { URL } from "url";
 const DEBUG = false;
 const FORCE_CRAWLER = false;
 
-// Defaults
-let carbonModel = 'swd';   // swd (latest), swd3, swd4, 1byte
-let carbonRatings = true;  // Enable carbon ratings where supported
-let maxPages = 100;        // Maximum number of pages to assess
-let measureEvent = 'cdp';  // 'cdp' (Chrome DevTools Protocol, default), 'idle'
-let outputFormat = 'cli';  // 'cli' (default), 'csv' (for spreadsheets, etc.)
-let siteUrl = null;        // Site root URL to assess
-let sourceFile = null;     // Optional source file with list of URLs to assess
+// Set up arguments and default values
+const argOptions = {
+	'help': {
+		type: 'boolean',
+		short: 'h',
+		description: "Show help"
+	},
+	'file': {
+		type: 'string',
+		short: 'f',
+		description: 'Path to a text file that lists the URLs to assess (one per line)'
+	},
+	'output': {
+		type: 'string',
+		default: 'cli',
+		short: 'o',
+		description: "Output format: 'cli' (text-based table, default) or 'csv' (for spreadsheets, etc.)"
+	},
+	'max-pages': {
+		type: 'string',
+		default: '100',
+		short: 'p',
+		description: "Maximum number of pages to assess"
+	},
+	'measure-event': {
+		type: 'string',
+		default: 'cdp',
+		short: 'e',
+		description: "Measurement event: 'cdp' (Chrome DevTools Protocol, default) or 'idle'"
+	},
+	'model': {
+		type: 'string',
+		default: 'swd', // swd (latest, default), swd3, swd4, 1byte
+		short: 'm',
+		description: "Carbon model: 'swd' (latest version of Sustainable Web Design Model, default), 'swd3', 'swd4', or '1byte'"
+	},
+	'no-ratings': {
+		type: 'boolean',
+		description: "Disable carbon ratings - enabled by default when supported (e.g. Sustainable Web Design Model)"
+	}
+};
 
 // Process args
-const args = process.argv.slice(2);
+let values, positionals;
+try {
+    const args = parseArgs({
+        options: argOptions,
+        args: process.argv.slice(2),
+        strict: true,
+        allowPositionals: true
+    });
+	values = args.values;
+	positionals = args.positionals;
+} catch (e) {
+    console.error(`❌ Argument error: ${e.message}`);
+	console.log("Run with --help for usage information.");
+    process.exit(1);
+}
+
+// Show help with --help argument or when input is missing (no URL or --file)
+if (values.help || (positionals.length === 0 && !values.file)) {
+    printHelp();
+}
 
 // Accept a site root as the last argument, or a list of URLs from a source file (--file <path>)
-const lastArg = args[args.length - 1];
+// The last argument is usually the website URL to assess, unless --file is used to specify a source file with URLs.
+// When --file is provided, the website URL argument is ignored if present.
+let siteUrl = null;
+if (positionals.length > 0) {
+	const lastArg = positionals[positionals.length - 1];
 
-// Check if last argument is a valid URL to use
-// If not, we check --file for a source file below
-try {
-	new URL(lastArg);
-	siteUrl = args.pop();
-} catch (err) {}
-
-// Process args
-for (let i = 0; i < args.length; i++) {
-	switch (args[i]) {
-		case "--file":
-			sourceFile = args[++i];
-			break;
-		case "--output":
-			outputFormat = args[++i];
-			break;
-		case "--max-pages":
-			maxPages = args[++i];
-			break;
-		case "--measure-event":
-			measureEvent = args[++i];
-			break;
-		case "--model":
-			carbonModel = args[++i];
-			break;
-		case "--ratings":
-			carbonRatings = true;
-			break;
-		case "--no-ratings":
-			carbonRatings = false;
-			break;
-		default:
-			console.error("Unknown argument: " + args[i]);
+	// Check if the argument is a valid URL
+	// If not, the script will use sourceFile instead
+	try {
+		new URL(lastArg);
+		siteUrl = lastArg;
+	} catch (e) {
+		console.error("❌ Invalid URL: " + lastArg);
+		process.exit(1);
 	}
 }
+
+// Map arg values (see argOptions for options and defaults)
+const sourceFile = values.file || null;
+const outputFormat = values.output;
+const maxPages = parseInt(values["max-pages"], 10);
+const measureEvent = values["measure-event"];
+const carbonModel = values.model;
+const carbonRatings = values["no-ratings"] ? false : true;
 
 // Constants
 const SWDM3_RATINGS = {
@@ -121,6 +161,34 @@ switch (carbonModel) {
 		model = new co2({ model: "swd", version: 4, rating: carbonRatings });
 		modelSupportsCarbonRating = true;
 		break;
+}
+
+/**
+ * Dynamically generates a help menu from the argConfig object.
+ */
+function printHelp() {
+	console.log("\n🌱 Website carbon scorecard");
+	console.log("Usage: node website-carbon.js [options] <url>");
+	console.log("   Or: node website-carbon.js [options] --file <path/to/urls.txt>");
+	console.log("\nOptions: ");
+
+	// console.log("  --file <path>           Path to a text file containing list of URLs to assess (one per line)");
+	// console.log("  --output <format>       Output format: 'cli' (default), 'csv'");
+	// console.log("  --max-pages <N>         Maximum number of pages to assess (default: 50)");
+	// console.log("  --measure-event <mode>  When to measure page size: 'cdp' (Chrome DevTools Protocol, default), 'idle'");
+	// console.log("  --model <model>         Carbon model to use: 'swd' (latest, i.e. 'swd4', default), 'swd3', '1byte'");
+	// console.log("  --ratings               Enable carbon ratings (where supported, default)");
+	// console.log("  --no-ratings            Disable carbon ratings");
+
+    for (const [name, config] of Object.entries(argOptions)) {
+        const short = config.short ? `-${config.short}, ` : "    ";
+        const label = `--${name}`.padEnd(16);
+        const defaultValue = (config.default !== undefined) ? ` (default: ${config.default})` : "";
+        console.log(`  ${short}${label} ${config.description}${defaultValue}`);
+    }
+    console.log("\nExample: ");
+    console.log("  node website-carbon.js --max-pages 10 https://example.org/\n");
+    process.exit(0);
 }
 
 /**
@@ -291,8 +359,8 @@ async function fetchSitemapUrls(siteUrl) {
 		console.log(`📄 Found ${urls.length} URLs in the site map`);
 
 		return urls; // Return all URLs; we'll limit later
-	} catch (err) {
-		console.warn("⚠️  Could not fetch or parse site map:", err);
+	} catch (e) {
+		console.warn("⚠️  Could not fetch or parse site map:", e.message);
 		return [];
 	}
 }
@@ -318,7 +386,7 @@ async function readUrlsFromFile(filePath) {
 			try {
 				new URL(url);
 				return true;
-			} catch (err) {
+			} catch (e) {
 				console.warn(`⚠️  Invalid URL skipped in file: ${url}`);
 				return false;
 			}
@@ -326,8 +394,8 @@ async function readUrlsFromFile(filePath) {
 
 		console.log(`📄 Using ${urls.length} URLs in '${filePath}'`);
 		return urls;
-	} catch (err) {
-		console.error(`🚨 Error reading source file ${filePath}: ${err.message}`);
+	} catch (e) {
+		console.error(`🚨 Error reading source file ${filePath}: ${e.message}`);
 		process.exit(1);
 	}
 }
@@ -454,8 +522,8 @@ async function measurePageIdle(browser, url, options = {}) {
 
 		await page.close();
 		return { url, bytes: totalBytes, co2 };
-	} catch (err) {
-		console.error(`⚠️  measurePageIdle: Failed to load ${url}: ${err.message}`);
+	} catch (e) {
+		console.error(`⚠️  measurePageIdle: Failed to load ${url}: ${e.message}`);
 		await page.close();
 		return null;
 	}
@@ -532,8 +600,8 @@ async function measurePageCDP(browser, url, options = {}) {
 					console.log(`${urlPath} – ${formatBytes(totalBytes)} – ${co2.toFixed(3)}g CO₂e`);
 				}
 			}
-		} catch (err) {
-			console.error(`⚠️  measurePageCDP: Failed to load page: ${err.message}`);
+		} catch (e) {
+			console.error(`⚠️  measurePageCDP: Failed to load page: ${e.message}`);
 		} finally {
 			if (client) {
 				// Remove event listener and close the CDP session
@@ -546,8 +614,8 @@ async function measurePageCDP(browser, url, options = {}) {
 		}
 
 		return { url, bytes: totalBytes, co2 };
-	} catch (err) {
-		console.error(`⚠️  measurePageCDP: Failed to load ${url}: ${err.message}`);
+	} catch (e) {
+		console.error(`⚠️  measurePageCDP: Failed to load ${url}: ${e.message}`);
 		return null;
 	}
 }
@@ -579,29 +647,6 @@ async function measurePage(browser, url, options = {}) {
  * Main function for the website carbon assessment.
  */
 async function main() {
-	if ((siteUrl === null) && (sourceFile === null)) {
-		console.log("Usage: node website-carbon.js [--max-pages <N>] [...] https://example.org/");
-		console.log("   Or: node website-carbon.js --file <path/to/urls.txt> [--max-pages <N>] [...]");
-		console.log("\nOptions: ");
-		console.log("  --file <path>           Path to a text file containing list of URLs to assess (one per line)");
-		console.log("  --output <format>       Output format: 'cli' (default), 'csv'");
-		console.log("  --max-pages <N>         Maximum number of pages to assess (default: 50)");
-		console.log("  --measure-event <mode>  When to measure page size: 'cdp' (Chrome DevTools Protocol, default), 'idle'");
-		console.log("  --model <model>         Carbon model to use: 'swd' (latest, i.e. 'swd4', default), 'swd3', '1byte'");
-		console.log("  --ratings               Enable carbon ratings (where supported, default)");
-		console.log("  --no-ratings            Disable carbon ratings");
-		process.exit(1);
-	}
-
-	if (siteUrl !== null) {
-		try {
-			new URL(siteUrl);
-		} catch (err) {
-			console.error("Invalid URL: " + siteUrl);
-			process.exit(1);    
-		}
-	}
-
 	let isGreen = false;
 	let urls = [];
 
@@ -676,7 +721,8 @@ async function main() {
 	const avgBytes = firstVisitResults.reduce((sum, r) => sum + r.bytes, 0) / numResults;
 	const avgCO2e = firstVisitResults.reduce((sum, r) => sum + r.co2, 0) / numResults;
 
-	console.log("\n=== 🌱 Website Carbon Summary ===");
+	// Output summary as a text-based table
+	console.log("\n=== 🌱 Website carbon summary ===");
 	console.log(`Pages assessed: ${numResults}`);
 	console.log(`Average size:   ${formatBytes(avgBytes)}`);
 	console.log(`Average CO₂e:   ${(avgCO2e).toFixed(2)} g per page`);
