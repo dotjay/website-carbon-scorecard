@@ -164,7 +164,7 @@ if (!modelSupportsCarbonRating && carbonRatings === true) {
 }
 
 /**
- * Dynamically generates a help menu from the argConfig object.
+ * Dynamically generates a help message based on the defined argument options.
  */
 function printHelp() {
 	console.log("\n🌱 Website carbon scorecard");
