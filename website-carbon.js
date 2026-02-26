@@ -621,9 +621,14 @@ function outputSortAlphabetically(a, b) {
  */
 async function processInBatches(items, batchSize, taskFn) {
     const results = [];
+	const itemsTotal = items.length;
 
-    for (let i = 0; i < items.length; i += batchSize) {
+    for (let i = 0; i < itemsTotal; i += batchSize) {
         const batch = items.slice(i, i + batchSize);
+		const currentBatch = Math.min(i + batchSize, itemsTotal);
+
+		process.stdout.write(`  Processing ${currentBatch}/${itemsTotal}...\r`);
+
         const batchResults = await Promise.all(batch.map(item => taskFn(item)));
         results.push(...batchResults.filter(r => r !== null));
     }
