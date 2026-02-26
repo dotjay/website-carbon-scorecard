@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * website-carbon.js
+ * website-carbon-scorecard.js
  * 
  * A command-line tool for estimating the carbon emissions of a website.
  */
@@ -171,8 +171,8 @@ if (!modelSupportsCarbonRating && carbonRatings === true) {
  */
 function printHelp() {
 	console.log("\n🌱 Website carbon scorecard");
-	console.log("Usage: node website-carbon.js [options] <url>");
-	console.log("   Or: node website-carbon.js [options] --file <path/to/urls.txt>");
+	console.log("Usage: node website-carbon-scorecard.js [options] <url>");
+	console.log("   Or: node website-carbon-scorecard.js [options] --file <path/to/urls.txt>");
 	console.log("\nOptions: ");
 
 	// console.log("  --file <path>           Path to a text file containing list of URLs to assess (one per line)");
@@ -189,7 +189,7 @@ function printHelp() {
         console.log(`  ${short}${label} ${config.description}${defaultValue}`);
     }
     console.log("\nExample: ");
-    console.log("  node website-carbon.js --max-pages 10 https://example.org/\n");
+    console.log("  node website-carbon-scorecard.js --max-pages 10 https://example.org/\n");
     process.exit(0);
 }
 

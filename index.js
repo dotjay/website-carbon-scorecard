@@ -1,5 +1,5 @@
 async function main() {
-  console.log("Usage: node website-carbon.js https://example.org/");
+  console.log("Usage: node website-carbon-scorecard.js https://example.org/");
 }
 
 main();
