@@ -7,10 +7,11 @@
  */
 
 // TODO: 
+// - Measure the real transfer size rather than the buffer length (uncompressed)
 // - Extend to allow other measurement events: idle0, idle2, load, domcontentloaded
-// - Consider region / gridIntensity options for more accurate CO2 estimates
+// - Consider region/gridIntensity options for more accurate CO2 estimates
 // - Consider other ways the transfer size calculations can be improved
-// - Run Puppeteer pages in parallel to speed things up (3-5 pages at a time?)
+// - Run Puppeteer pages in parallel to speed things up, perhaps 3-5 pages at a time?
 
 // Imports
 import fs from "fs";
@@ -227,7 +228,6 @@ function carbonRating(co2e = null) {
  * @returns {string} Bytes as a formatted string.
  */
 // Based on: https://stackoverflow.com/a/18650828
-// Posted by anon, modified by community. See post 'Timeline' for change history
 // Retrieved 2025-11-14, License - CC BY-SA 4.0
 function formatBytes(bytes, options = {}) {
 	if (!+bytes) return '0 Bytes';
@@ -423,6 +423,7 @@ async function measurePageIdle(browser, url, options = {}) {
 	
 	page.on("response", async (response) => {
 		try {
+			// FIXME - Measure the real transfer size rather than the buffer length (uncompressed)
 			const buffer = await response.buffer();
 			totalBytes += buffer.length;
 		} catch {
