@@ -7,7 +7,7 @@
  */
 
 // TODO: 
-// - Extend to allow other measurement events: idle0, idle2, load, domcontentloaded
+// - Extend to allow more granular selection of measurement events: idle0, idle2, load, domcontentloaded
 // - Consider region/gridIntensity options for more accurate CO2 estimates
 // - Consider other ways the transfer size calculations can be improved
 // - Run Puppeteer pages in parallel to speed things up, perhaps 3-5 pages at a time?
@@ -57,7 +57,7 @@ const argOptions = {
 	'measure-mode': {
 		type: 'string',
 		default: 'cdp',
-		description: "Measurement mode: 'cdp' (Chrome DevTools Protocol, default) or 'buffer'"
+		description: "Measurement mode: 'cdp' (Chrome DevTools Protocol, default) or 'buffer' (experimental and not recommended)"
 	},
 	'model': {
 		type: 'string',
@@ -491,7 +491,7 @@ async function measurePage(browser, url, options = {}) {
 
 	try {
 		// Set up session
-		page = (await browser.pages())[0] || await browser.newPage();
+		page = await browser.newPage();
 		await page.setViewport({ width: 1900, height: 1000 });
 
 		// Enable network tracking to capture transfer sizes
@@ -509,6 +509,8 @@ async function measurePage(browser, url, options = {}) {
 			console.log(`Cache not cleared.`);
 		}
 
+		// Handle different measurement modes
+		let onLoadingFinished = null;
 		if (mode === 'cdp') {
 			// Approach 1: Listen for CDP's 'Network.responseReceived' events and sum 'encodedDataLength'
 			// from the response body of each response. This gives us the total transfer size (compressed size).
@@ -517,7 +519,7 @@ async function measurePage(browser, url, options = {}) {
 			// See:
 			// https://stackoverflow.com/questions/55429613/chrome-devtools-protocol-page-stats
 			// https://chromedevtools.github.io/devtools-protocol/tot/Network/
-			const onLoadingFinished = (data) => {
+			onLoadingFinished = (data) => {
 				if (data.encodedDataLength >= 0) {
 					totalBytes += data.encodedDataLength;
 				}
@@ -525,7 +527,7 @@ async function measurePage(browser, url, options = {}) {
 			client.on('Network.loadingFinished', onLoadingFinished);
 		} else if (mode === 'buffer') {
 			// Approach 2: Listen for the page's 'response' events and sum the length of the response buffer.
-			// This gives us the total size of buffer (uncompressed size).
+			// This gives us the total size of buffer (uncompressed size) and is generally not recommended.
 			page.on("response", async (response) => {
 				try {
 					const buffer = await response.buffer();
@@ -537,10 +539,11 @@ async function measurePage(browser, url, options = {}) {
 			process.exit(1);
 		}
 
+		// Navigate to the page and wait for the specified event
 		try {
 			// Navigate to the page and wait for network activity to finish
 			// https://pptr.dev/api/puppeteer.puppeteerlifecycleevent
-			const waitUntil = (event === 'load') ? 'load' : 'networkidle0';
+			const waitUntil = (event === 'load') ? 'load' : 'networkidle2';
 			await page.goto(url, { waitUntil: waitUntil, timeout: 45000 });
 
 			// Estimate CO2 based on total bytes transferred
@@ -566,12 +569,12 @@ async function measurePage(browser, url, options = {}) {
 		} finally {
 			if (client) {
 				// Remove event listener and close the CDP session
-				client.off('Network.loadingFinished', onLoadingFinished);
+				if (onLoadingFinished !== null) {
+					client.off('Network.loadingFinished', onLoadingFinished);
+				}
 				await client.detach();
 			}
-			if (page) {
-				await page.close();
-			}
+			await page.close();
 		}
 
 		return { url, bytes: totalBytes, co2 };
