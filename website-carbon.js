@@ -134,10 +134,6 @@ const SWDM4_RATINGS = {
 	fiftiethPercentile: 0.359,
 };
 
-if (modelSupportsCarbonRating && carbonRatings === true) {
-	console.log("⚠️  Warning: Carbon ratings are only available with the Sustainable Web Design Model. Carbon ratings will not display.");
-}
-
 // Using @tgwf/co2 library to estimate CO2 emissions
 var co2Data = {};
 var model;
@@ -161,6 +157,10 @@ switch (carbonModel) {
 		model = new co2({ model: "swd", version: 4, rating: carbonRatings });
 		modelSupportsCarbonRating = true;
 		break;
+}
+
+if (!modelSupportsCarbonRating && carbonRatings === true) {
+	console.log("⚠️  Warning: Carbon ratings are only available with the Sustainable Web Design Model. Carbon ratings will not display.");
 }
 
 /**
