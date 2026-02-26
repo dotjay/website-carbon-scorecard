@@ -10,7 +10,6 @@
 // - Extend to allow more granular selection of measurement events: idle0, idle2, load, domcontentloaded
 // - Consider region/gridIntensity options for more accurate CO2 estimates
 // - Consider other ways the transfer size calculations can be improved
-// - Run Puppeteer pages in parallel to speed things up, perhaps 3-5 pages at a time?
 
 // Imports
 import fs from "fs";
@@ -585,6 +584,26 @@ async function measurePage(browser, url, options = {}) {
 }
 
 /**
+ * Processes an array of items in batches.
+ *
+ * @param {Array} items - The items to process.
+ * @param {number} batchSize - How many to process at once.
+ * @param {Function} taskFn - The async function to run for each item.
+ * @returns {Promise<Array>} The aggregated results.
+ */
+async function processInBatches(items, batchSize, taskFn) {
+    const results = [];
+
+    for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(item => taskFn(item)));
+        results.push(...batchResults.filter(r => r !== null));
+    }
+
+    return results;
+}
+
+/**
  * Main function for the website carbon assessment.
  */
 async function main() {
@@ -635,25 +654,20 @@ async function main() {
 	// Limit to maxPages
 	urls = urls.slice(0, maxPages);
 
+	// Batch processing pages to speed things up
+	const concurrency = 3; // Number of pages to process in parallel
+
 	// First visits (cold loads)
 	console.log(`\n🔄 First visits...`);
-	const firstVisitResults = [];
-	for (const url of urls) {
-		const firstVisit = await measurePage(browser, url, { clearCache: true, isGreen: isGreen, event: measureEvent, mode: measureMode });
-		if (firstVisit) {
-			firstVisitResults.push(firstVisit);
-		}
-	}
+	const firstVisitResults = await processInBatches(urls, concurrency, (url) =>
+		measurePage(browser, url, { clearCache: true, isGreen, event: measureEvent, mode: measureMode })
+	);
 
 	// Return visits (warm loads)
 	console.log(`\n💾 Return visits...`);
-	const returnVisitResults = [];
-	for (const url of urls) {
-		const returnVisit= await measurePage(browser, url, { clearCache: false, isGreen: isGreen, event: measureEvent, mode: measureMode });
-		if (returnVisit) {
-			returnVisitResults.push(returnVisit);
-		}
-	}
+	const returnVisitResults = await processInBatches(urls, concurrency, (url) =>
+		measurePage(browser, url, { clearCache: false, isGreen, event: measureEvent, mode: measureMode })
+	);
 
 	await browser.close();
 
