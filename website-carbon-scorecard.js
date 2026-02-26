@@ -31,22 +31,25 @@ const argOptions = {
 		short: 'h',
 		description: "Show help"
 	},
-	'file': {
+	'input': {
 		type: 'string',
 		short: 'f',
-		description: 'Path to a text file that lists the URLs to assess (one per line)'
+		description: 'Path to a text file that lists the URLs to assess (one per line)',
+		valueName: 'FILEPATH'
 	},
 	'output': {
 		type: 'string',
 		default: 'cli',
 		short: 'o',
-		description: "Output format: 'cli' (text-based table, default) or 'csv' (for spreadsheets, etc.)"
+		description: "Output format: 'cli' (text-based table, default) or 'csv' (for spreadsheets, etc.)",
+		valueName: 'STRING'
 	},
 	'max-pages': {
 		type: 'string',
 		default: '100',
 		short: 'p',
-		description: "Maximum number of pages to assess"
+		description: "Maximum number of pages to assess",
+		valueName: 'NUMBER'
 	},
 	'measure-event': {
 		type: 'string',
@@ -62,7 +65,8 @@ const argOptions = {
 		type: 'string',
 		default: 'swd', // swd (latest, default), swd3, swd4, 1byte
 		short: 'm',
-		description: "Carbon model: 'swd' (latest version of Sustainable Web Design Model, default), 'swd3', 'swd4', or '1byte'"
+		description: "Carbon model: 'swd' (latest version of Sustainable Web Design Model, default), 'swd3', 'swd4', or '1byte'",
+		valueName: 'STRING'
 	},
 	'no-ratings': {
 		type: 'boolean',
@@ -87,14 +91,14 @@ try {
     process.exit(1);
 }
 
-// Show help with --help argument or when input is missing (no URL or --file)
-if (values.help || (positionals.length === 0 && !values.file)) {
+// Show help with --help argument or when input is missing (no URL or --input)
+if (values.help || (positionals.length === 0 && !values.input)) {
     printHelp();
 }
 
-// Accept a site root as the last argument, or a list of URLs from a source file (--file <path>)
-// The last argument is usually the website URL to assess, unless --file is used to specify a source file with URLs.
-// When --file is provided, the website URL argument is ignored if present.
+// Accept a site root as the last argument, or a list of URLs from a source file (--input=FILEPATH)
+// The last argument is usually the website URL to assess, unless --input is used to specify a source file with URLs.
+// When --input is provided, the website URL argument is ignored if present.
 let siteUrl = null;
 if (positionals.length > 0) {
 	const lastArg = positionals[positionals.length - 1];
@@ -111,7 +115,7 @@ if (positionals.length > 0) {
 }
 
 // Map arg values (see argOptions for options and defaults)
-const sourceFile = values.file || null;
+const sourceFile = values.input || null;
 const outputFormat = values.output;
 const maxPages = parseInt(values["max-pages"], 10);
 const measureEvent = values["measure-event"];
@@ -172,19 +176,13 @@ if (!modelSupportsCarbonRating && carbonRatings === true) {
 function printHelp() {
 	console.log("\n🌱 Website carbon scorecard");
 	console.log("Usage: node website-carbon-scorecard.js [options] <url>");
-	console.log("   Or: node website-carbon-scorecard.js [options] --file <path/to/urls.txt>");
+	console.log("   Or: node website-carbon-scorecard.js [options] --input=path/to/urls.txt");
 	console.log("\nOptions: ");
-
-	// console.log("  --file <path>           Path to a text file containing list of URLs to assess (one per line)");
-	// console.log("  --output <format>       Output format: 'cli' (default), 'csv'");
-	// console.log("  --max-pages <N>         Maximum number of pages to assess (default: 50)");
-	// console.log("  --model <model>         Carbon model to use: 'swd' (latest, i.e. 'swd4', default), 'swd3', '1byte'");
-	// console.log("  --ratings               Enable carbon ratings (where supported, default)");
-	// console.log("  --no-ratings            Disable carbon ratings");
 
     for (const [name, config] of Object.entries(argOptions)) {
         const short = config.short ? `-${config.short}, ` : "    ";
-        const label = `--${name}`.padEnd(16);
+		const valueName = config.valueName ? `=${config.valueName}` : "";
+        const label = `--${name}${valueName}`.padEnd(19);
         const defaultValue = (config.default !== undefined) ? ` (default: ${config.default})` : "";
         console.log(`  ${short}${label} ${config.description}${defaultValue}`);
     }
@@ -209,7 +207,7 @@ function bytesToCO2(bytes, isGreen = false) {
 		return 0;
 	}
 
-	// If hosting is green, green hosting factor = 1 (handled in co2.js)
+	// If hosting is green, green hosting factor = 1 (handled in CO2.js)
 	// https://sustainablewebdesign.org/estimating-digital-emissions/#faq-question-1713777503222
 	var data;
 	if (carbonModel === 'swd3') {
@@ -253,7 +251,7 @@ function bytesToCO2(bytes, isGreen = false) {
 // https://github.com/thegreenwebfoundation/developer-docs/issues/64
 // Note: We emulate the ratingScale() function here to allow us to estimate an overall 
 // carbon rating for a website based on average CO2e. The carbon rating of individual pages
-// is returned by the co2.js library when using the SWD model with ratings enabled.
+// is returned by the CO2.js library when using the SWD model with ratings enabled.
 function carbonRating(co2e = null) {
 	if (co2e !== null) {
 		const {
@@ -627,7 +625,7 @@ async function processInBatches(items, batchSize, taskFn) {
         const batch = items.slice(i, i + batchSize);
 		const currentBatch = Math.min(i + batchSize, itemsTotal);
 
-		process.stdout.write(`  Processing ${currentBatch}/${itemsTotal}...\r`);
+		process.stdout.write(`> Processing ${currentBatch}/${itemsTotal}...\r`);
 
         const batchResults = await Promise.all(batch.map(item => taskFn(item)));
         results.push(...batchResults.filter(r => r !== null));
