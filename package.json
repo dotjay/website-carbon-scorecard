@@ -25,7 +25,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@tgwf/co2": "^0.16.9",
+    "@tgwf/co2": "^0.17.0",
     "hpagent": "^1.2.0",
     "puppeteer": "^24.30.0",
     "simplecrawler": "^1.1.9",
