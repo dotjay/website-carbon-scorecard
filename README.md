@@ -132,15 +132,18 @@ Notes:
 * The ‘Processing’ sheet combines the URLs found in the two data sets used by the ‘Results (website)’ sheet, since URLs may be added or removed between measurements. Avoid editing this sheet directly.
 
 4. Run `website-carbon-scorecard.js` on the website being tested to get the data, adding the `--output=csv` option to output the data as comma-separated values:   
-   // This assesses the website using its sitemap.xml  
-   // (or by crawling the site if there is no sitemap)  
-   node website-carbon-scorecard.js \--output=csv https://example.org/  
-     
-   // Or you can specify a text file of URLs to assess  
-   node website-carbon-scorecard.js \--output=csv \--input=journey1.txt
-     
-   // You may like to output the data to a file  
-   node website-carbon-scorecard.js \--output=csv \--input=journey1.txt \> ./journey1-results.txt
+
+```
+// This assesses the website using its sitemap.xml  
+// (or by crawling the site if there is no sitemap)  
+node website-carbon-scorecard.js \--output=csv https://example.org/  
+  
+// Or you can specify a text file of URLs to assess  
+node website-carbon-scorecard.js \--output=csv \--input=journey1.txt
+  
+// You may like to output the data to a file  
+node website-carbon-scorecard.js \--output=csv \--input=journey1.txt \> ./journey1-results.txt
+```
 
 5. Name one of the data sheets with the date that the measurement was taken, and paste the data from `website-carbon-scorecard.js` into it  
    1. First visit data can be pasted into Column A, then select ‘Split text to columns’ from the ‘Data’ menu to get Google Sheets to split the CSV data and populate Columns B-D.  
