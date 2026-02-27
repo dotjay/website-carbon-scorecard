@@ -1,4 +1,4 @@
-# Website carbon scorecard
+# Website Carbon Scorecard
 
 A command-line tool for estimating the carbon emissions of a website.
 
@@ -9,7 +9,7 @@ Author: Jon Gibbins, https://digitalasitshouldbe.com/
 ### Pre-requisites
 
 * Node.js version 18.3.0 or higher  
-* NPM, which usually comes bundled with [Node.js](http://Node.js)
+* NPM, which usually comes bundled with [Node.js](https://nodejs.org/)
 
 ### Dependencies
 
@@ -118,8 +118,10 @@ By default, the number of pages assessed is limited to the first 100 pages. So, 
 
 ## Using the scorecard spreadsheet
 
-1. [Make a copy](https://docs.google.com/spreadsheets/u/0/d/1lNjpv0bMpXY84OSkJ63hOJ-ypz0Sc9qY9gdgLVB19n0/copy) of the [Website carbon scorecard (template)](https://docs.google.com/spreadsheets/d/1lNjpv0bMpXY84OSkJ63hOJ-ypz0Sc9qY9gdgLVB19n0/preview)  
-2. Rename the file: Website carbon scorecard for yourwebsite.org  
+The Website Carbon Scorecard spreadsheet can be used to compare measurements over time.
+
+1. [Make a copy](https://docs.google.com/spreadsheets/u/0/d/1lNjpv0bMpXY84OSkJ63hOJ-ypz0Sc9qY9gdgLVB19n0/copy) of the [Website Carbon Scorecard (template)](https://docs.google.com/spreadsheets/d/1lNjpv0bMpXY84OSkJ63hOJ-ypz0Sc9qY9gdgLVB19n0/preview)
+2. Rename the file: Website Carbon Scorecard for yourwebsite.org
 3. In the ‘Results (website)’ sheet, follow the instructions (highlighted in yellow) to:   
    1. Set your website root URL.  
    2. Set the date of the first measurement (the ‘From’ date in cell B3) in YYYY-MM-DD format – we will gather the data for this using the tool in a moment. The data from this first measurement will be added to a data sheet that must have this date as its name. The example ‘From’ data sheet is called ‘2025-11-01’. You can double click this data sheet's tab to change its name to reflect your ‘From’ date.  

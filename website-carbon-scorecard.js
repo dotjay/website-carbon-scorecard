@@ -174,7 +174,7 @@ if (!modelSupportsCarbonRating && carbonRatings === true) {
  * Dynamically generates a help message based on the defined argument options.
  */
 function printHelp() {
-	console.log("\n🌱 Website carbon scorecard");
+	console.log("\n🌱 Website Carbon Scorecard");
 	console.log("Usage: node website-carbon-scorecard.js [options] <url>");
 	console.log("   Or: node website-carbon-scorecard.js [options] --input=path/to/urls.txt");
 	console.log("\nOptions: ");
