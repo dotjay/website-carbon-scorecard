@@ -2,8 +2,7 @@
 
 A command-line tool for estimating the carbon emissions of a website.
 
-Author: Jon Gibbins
-Web: https://digitalasitshouldbe.com/
+Author: Jon Gibbins, https://digitalasitshouldbe.com/
 
 ## Install
 
